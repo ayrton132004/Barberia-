@@ -542,23 +542,43 @@
                         <h2 class="text-2xl font-black text-white">GESTIÓN DE SUSCRIPCIONES Y RESERVAS</h2>
                     </div>
                     <div class="flex items-center space-x-3">
-                        <button onclick="syncGlobalData()" class="bg-brand-teal/20 border border-brand-teal text-brand-teal hover:bg-brand-teal hover:text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition">
-                            <i class="fa-solid fa-rotate mr-1.5"></i> Actualizar Servidor
+                        <button onclick="syncGlobalData()" class="bg-brand-orange text-slate-950 hover:bg-orange-600 font-black px-4 py-2.5 rounded-xl text-xs transition shadow-lg flex items-center space-x-2">
+                            <i class="fa-solid fa-rotate text-sm"></i> 
+                            <span>Cargar Reservas Nuevas</span>
                         </button>
                         <button onclick="logoutAdmin()" class="bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-300 font-bold px-4 py-2 rounded-xl text-xs transition border border-slate-700">
                             <i class="fa-solid fa-right-from-bracket mr-1.5"></i> Salir del Panel
                         </button>
                     </div>
                 </div>
+                        <button id="submit-booking-btn" type="submit" class="w-full bg-gradient-to-r from-brand-orange to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-slate-950 font-black py-4 rounded-xl text-base shadow-lg transition flex items-center justify-center space-x-2">
+                            <i class="fa-solid fa-paper-plane"></i>
+                            <span id="submit-btn-text">CONFIRMAR Y ENVIAR RESERVA POR WHATSAPP</span>
+                        </button>
+                    </form>
 
-                <!-- Tarjetas Métricas -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between">
-                        <div>
-                            <span class="text-xs text-slate-400 font-semibold block">Suscriptores VIP</span>
-                            <span id="metric-vip-count" class="text-3xl font-black text-white">0</span>
-                            <span class="text-[11px] text-brand-teal font-bold block mt-1">Clientes $35k/mes</span>
+                    <!-- Confirmación -->
+                    <div id="booking-success" class="hidden mt-6 p-6 bg-slate-950 border border-emerald-500/40 rounded-2xl text-center space-y-4">
+                        <div class="w-12 h-12 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto text-2xl">
+                            <i class="fa-solid fa-check"></i>
                         </div>
+                        <h4 class="text-lg font-bold text-white">¡Turno Guardado con Éxito!</h4>
+                        <p id="success-message" class="text-xs text-slate-300 leading-relaxed"></p>
+                        
+                        <div class="flex flex-col sm:flex-row justify-center gap-3">
+                            <a id="wa-redirect-btn" href="#" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-6 py-3 rounded-xl text-xs transition shadow-lg">
+                                <i class="fa-brands fa-whatsapp text-base"></i>
+                                <span>ABRIR WHATSAPP AHORA</span>
+                            </a>
+                            <button onclick="resetBookingForm()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-5 py-3 rounded-xl text-xs transition">
+                                Agendar otro turno
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
                         <div class="w-12 h-12 bg-brand-orange/10 text-brand-orange rounded-xl flex items-center justify-center text-xl">
                             <i class="fa-solid fa-crown"></i>
                         </div>
@@ -1092,6 +1112,12 @@
 
         async function submitBooking(e) {
             e.preventDefault();
+            
+            const btn = document.getElementById('submit-booking-btn');
+            const btnText = document.getElementById('submit-btn-text');
+            btn.disabled = true;
+            btnText.innerText = "GUARDANDO EN SERVIDOR...";
+
             const name = document.getElementById('client-name').value;
             const phone = document.getElementById('client-phone').value;
             const type = document.getElementById('service-select').value;
@@ -1139,7 +1165,7 @@
                 totalPrice: totalPrice
             };
 
-            // Guardar al instante sin esperar llamadas asíncronas lentas
+            // Guardar datos
             if (!window.bookings) window.bookings = [];
             window.bookings.unshift(newBooking);
             localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
@@ -1147,19 +1173,27 @@
             const msgText = `Hola Ayrton! Quisiera reservar un turno:\n- Nombre: ${name}\n- Servicio: ${serviceName}\n- Fecha: ${date}\n- Hora: ${time}\n- Estado de pago: ${depositText}\n- Mi Teléfono: ${phone}`;
             const waUrl = `https://api.whatsapp.com/send?phone=5493425913679&text=${encodeURIComponent(msgText)}`;
 
+            // Pequeña pausa asegurando la escritura de datos
+            await new Promise(resolve => setTimeout(resolve, 800));
+
+            btn.disabled = false;
+            btnText.innerText = "CONFIRMAR Y ENVIAR RESERVA POR WHATSAPP";
+
             document.getElementById('booking-form').classList.add('hidden');
             const successBox = document.getElementById('booking-success');
             const msgEl = document.getElementById('success-message');
             const waBtn = document.getElementById('wa-redirect-btn');
 
-            msgEl.innerHTML = `Reserva para <strong>${name}</strong> registrada para el <strong>${date}</strong> a las <strong>${time}</strong> (${serviceName}).<br/><span class="text-brand-orange font-bold">${depositText}</span>`;
+            msgEl.innerHTML = `Reserva guardada para <strong>${name}</strong> el <strong>${date}</strong> a las <strong>${time}</strong>.<br/><span class="text-brand-orange font-bold">${depositText}</span>`;
             waBtn.href = waUrl;
             successBox.classList.remove('hidden');
 
-            showToast("¡Turno listo! Abriendo WhatsApp...");
+            showToast("¡Reserva guardada! Redirigiendo a WhatsApp...");
             
-            // Redirección instantánea y directa a WhatsApp
-            window.location.href = waUrl;
+            // Redirección a WhatsApp tras la confirmación de guardado
+            setTimeout(() => {
+                window.location.href = waUrl;
+            }, 500);
         }
 
         function resetBookingForm() {
@@ -1180,4 +1214,4 @@
         });
     </script>
 </body>
-    </html>
+            </html>
