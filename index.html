@@ -4,11 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BARBERÍA AYRTON - Club VIP & Reserva de Turnos</title>
-    <!-- Web App Manifest Inline con Iconos Maskable y PNG para Android Home Screen -->
-    <link rel="manifest" href="data:application/manifest+json;utf8,%7B%22name%22%3A%22Barber%C3%ADa%20Ayrton%22%2C%22short_name%22%3A%22Barber%C3%ADaAyrton%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230F172A%22%2C%22theme_color%22%3A%22%230F172A%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%3Butf8%2C%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20512%20512%27%3E%3Crect%20width%3D%27512%27%20height%3D%27512%27%20fill%3D%27%230F172A%27%2F%3E%3Cpath%20d%3D%27M%2050%20256%20C%20100%20100%2C%20200%20100%2C%20256%20200%20C%20312%20100%2C%20412%20100%2C%20462%20256%20C%20384%20307%2C%20256%20435%2C%20256%20435%20Z%27%20fill%3D%27%23FF5722%27%2F%3E%3Cpath%20d%3D%27M%2090%20245%20C%20130%20130%2C%20200%20130%2C%20256%20215%20C%20312%20130%2C%20382%20130%2C%20422%20245%20Z%27%20fill%3D%27%23FFB300%27%2F%3E%3C%2Fsvg%3E%22%2C%22sizes%22%3A%22192x192%20512x512%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%2C%22purpose%22%3A%22any%20maskable%22%7D%5D%7D">
-    <!-- Touch Icons de Alta Definición para Teléfonos Android y iPhone -->
-    <link rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='25' fill='%230F172A'/><path d='M 10 50 C 20 20, 40 20, 50 40 C 60 20, 80 20, 90 50 C 75 60, 50 85, 50 85 Z' fill='%23FF5722'/><path d='M 18 48 C 25 25, 40 25, 50 42 C 60 25, 75 25, 82 48 Z' fill='%23FFB300'/></svg>">
-    <link rel="icon" type="image/svg+xml" sizes="any" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='25' fill='%230F172A'/><path d='M 10 50 C 20 20, 40 20, 50 40 C 60 20, 80 20, 90 50 C 75 60, 50 85, 50 85 Z' fill='%23FF5722'/><path d='M 18 48 C 25 25, 40 25, 50 42 C 60 25, 75 25, 82 48 Z' fill='%23FFB300'/></svg>">
+    <!-- Web App Manifest e Iconos Directos PNG para Android -->
+    <link rel="manifest" href="data:application/manifest+json;utf8,%7B%22name%22%3A%22Barber%C3%ADa%20Ayrton%22%2C%22short_name%22%3A%22Barber%C3%ADaAyrton%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230F172A%22%2C%22theme_color%22%3A%22%230F172A%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22icon.png%22%2C%22sizes%22%3A%22192x192%20512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="icon" type="image/png" href="icon.png">
     <!-- Web App Manifest & Theme Config -->
     <meta name="theme-color" content="#0F172A">
     <meta name="mobile-web-app-capable" content="yes">
@@ -526,7 +525,7 @@
                 <p class="text-slate-400 text-xs mt-1 mb-6">Ingresa tu clave de dueño para administrar turnos y caja de suscripciones VIP.</p>
                 
                 <div class="space-y-4">
-                    <input type="password" id="admin-pass" placeholder="Ingresa contraseña (Predeterminada: 2004)" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-center text-white text-sm focus:outline-none focus:border-brand-orange">
+                    <input type="password" id="admin-pass" placeholder="Ingresa contraseña" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-center text-white text-sm focus:outline-none focus:border-brand-orange">
                     <button onclick="loginAdmin()" class="w-full bg-brand-orange hover:bg-orange-600 text-slate-950 font-black py-3 rounded-xl text-xs tracking-wider uppercase transition shadow-lg">
                         INGRESAR AL PANEL
                     </button>
@@ -543,6 +542,9 @@
                         <h2 class="text-2xl font-black text-white">GESTIÓN DE SUSCRIPCIONES Y RESERVAS</h2>
                     </div>
                     <div class="flex items-center space-x-3">
+                        <button onclick="syncGlobalData()" class="bg-brand-teal/20 border border-brand-teal text-brand-teal hover:bg-brand-teal hover:text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition">
+                            <i class="fa-solid fa-rotate mr-1.5"></i> Actualizar Servidor
+                        </button>
                         <button onclick="logoutAdmin()" class="bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-300 font-bold px-4 py-2 rounded-xl text-xs transition border border-slate-700">
                             <i class="fa-solid fa-right-from-bracket mr-1.5"></i> Salir del Panel
                         </button>
@@ -577,7 +579,7 @@
                         <div>
                             <span class="text-xs text-slate-400 font-semibold block">Turnos Agendados</span>
                             <span id="metric-bookings-count" class="text-3xl font-black text-white">0</span>
-                            <span class="text-[11px] text-brand-yellow font-bold block mt-1">En agenda</span>
+                            <span class="text-[11px] text-brand-yellow font-bold block mt-1">En agenda global</span>
                         </div>
                         <div class="w-12 h-12 bg-brand-yellow/10 text-brand-yellow rounded-xl flex items-center justify-center text-xl">
                             <i class="fa-solid fa-calendar-days"></i>
@@ -726,22 +728,54 @@
     </footer>
 
     <script>
-        // ESTADO GLOBAL CON PERSISTENCIA LOCALSTORAGE
+        // SERVIDOR EN LA NUBE CON JSONBIN (SIN NECESIDAD DE CONFIGURAR NADA)
+        const BIN_ID = '67c7e470ad19ca34f815ff89';
+        const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
         let adminLoggedIn = false;
         
-        let subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || [
-            { id: 1, name: "Lucas Gómez", phone: "342 455-8899", startDate: "2026-03-01", cutsUsed: 2, status: "Activo" },
-            { id: 2, name: "Mateo Rossi", phone: "342 511-2233", startDate: "2026-02-15", cutsUsed: 4, status: "Activo" }
-        ];
+        let subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || [];
+        let bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
 
-        let bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [
-            { id: 101, name: "Lucas Gómez", phone: "342 455-8899", service: "socio", date: "2026-03-10", time: "16:00 hs", status: "Confirmado", totalPrice: "$0 ARS (Suscripción)" },
-            { id: 102, name: "Franco Benítez", phone: "342 677-1122", service: "tintura_global", date: "2026-03-12", time: "18:00 hs", status: "Seña Pendiente", totalPrice: "$50.000 ARS (Seña: $25.000)" }
-        ];
+        // SINCRONIZACIÓN AUTOMÁTICA EN TIEMPO REAL
+        async function fetchGlobalData() {
+            try {
+                const res = await fetch(API_URL + '/latest');
+                if(res.ok) {
+                    const data = await res.json();
+                    if(data.record) {
+                        subscribers = data.record.subscribers || [];
+                        bookings = data.record.bookings || [];
+                        saveLocalData();
+                        if(adminLoggedIn) renderAdminDashboard();
+                    }
+                }
+            } catch(e) {
+                console.log('Modo local activo');
+            }
+        }
 
-        function saveData() {
+        async function saveGlobalData() {
+            saveLocalData();
+            try {
+                await fetch(API_URL, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subscribers: subscribers, bookings: bookings })
+                });
+            } catch(e) {
+                console.log('Error al guardar en la nube');
+            }
+        }
+
+        function saveLocalData() {
             localStorage.setItem('ayrton_subscribers', JSON.stringify(subscribers));
             localStorage.setItem('ayrton_bookings', JSON.stringify(bookings));
+        }
+
+        function syncGlobalData() {
+            fetchGlobalData();
+            showToast("Sincronizando con el servidor...");
         }
 
         // CONTROL DE VISTAS (CLIENTE / ADMIN)
@@ -755,6 +789,7 @@
                 adminView.classList.remove('hidden');
                 btnLabel.innerText = "VOLVER A CLIENTES";
                 if(adminLoggedIn) {
+                    fetchGlobalData();
                     renderAdminDashboard();
                 }
             } else {
@@ -770,10 +805,11 @@
                 adminLoggedIn = true;
                 document.getElementById('admin-auth-card').classList.add('hidden');
                 document.getElementById('admin-dashboard').classList.remove('hidden');
+                fetchGlobalData();
                 renderAdminDashboard();
                 showToast("¡Bienvenido Ayrton!");
             } else {
-                showToast("Contraseña incorrecta (Usa: 2004)");
+                showToast("Contraseña incorrecta");
             }
         }
 
@@ -858,7 +894,7 @@
             });
 
             if(filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">No hay reservas registradas con estos filtros</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">No hay reservas registradas en la agenda</td></tr>`;
                 return;
             }
 
@@ -907,7 +943,7 @@
             const sub = subscribers.find(s => s.id === id);
             if(sub && sub.cutsUsed < 4) {
                 sub.cutsUsed += 1;
-                saveData();
+                saveGlobalData();
                 renderAdminDashboard();
                 showToast(`Corte registrado para ${sub.name} (${sub.cutsUsed}/4)`);
             }
@@ -918,7 +954,7 @@
             if(sub) {
                 sub.cutsUsed = 0;
                 sub.status = 'Activo';
-                saveData();
+                saveGlobalData();
                 renderAdminDashboard();
                 showToast(`Mes renovado para ${sub.name}`);
             }
@@ -926,7 +962,7 @@
 
         function deleteSub(id) {
             subscribers = subscribers.filter(s => s.id !== id);
-            saveData();
+            saveGlobalData();
             renderAdminDashboard();
             showToast("Suscriptor eliminado");
         }
@@ -935,7 +971,7 @@
             const b = bookings.find(item => item.id === id);
             if(b) {
                 b.status = b.status === 'Confirmado' ? 'Seña Pendiente' : 'Confirmado';
-                saveData();
+                saveGlobalData();
                 renderAdminDashboard();
                 showToast(`Reserva de ${b.name} actualizada: ${b.status}`);
             }
@@ -943,7 +979,7 @@
 
         function deleteBooking(id) {
             bookings = bookings.filter(b => b.id !== id);
-            saveData();
+            saveGlobalData();
             renderAdminDashboard();
             showToast("Turno eliminado");
         }
@@ -973,7 +1009,7 @@
             };
 
             subscribers.push(newSub);
-            saveData();
+            saveGlobalData();
             closeNewSubscriberModal();
             renderAdminDashboard();
             showToast(`Nuevo suscriptor agregado: ${name}`);
@@ -1051,7 +1087,7 @@
             }
         }
 
-        function submitBooking(e) {
+        async function submitBooking(e) {
             e.preventDefault();
             const name = document.getElementById('client-name').value;
             const phone = document.getElementById('client-phone').value;
@@ -1089,7 +1125,7 @@
                 totalPrice = "$40.000 ARS (Seña: $20.000)";
             }
 
-            // Registrar en estado del Dueño automáticamente
+            // Registrar en servidor global
             const newBooking = {
                 id: Date.now(),
                 name: name,
@@ -1102,7 +1138,7 @@
             };
 
             bookings.push(newBooking);
-            saveData();
+            await saveGlobalData();
 
             const msgText = `Hola Ayrton! Quisiera reservar un turno:\n- Nombre: ${name}\n- Servicio: ${serviceName}\n- Fecha: ${date}\n- Hora: ${time}\n- Estado de pago: ${depositText}\n- Mi Teléfono: ${phone}`;
             const waUrl = `https://wa.me/5493425913679?text=${encodeURIComponent(msgText)}`;
@@ -1127,6 +1163,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            fetchGlobalData();
             const dateInp = document.getElementById('booking-date');
             if(dateInp) {
                 const today = new Date().toISOString().split('T')[0];
@@ -1137,4 +1174,4 @@
         });
     </script>
 </body>
-                                        </html>
+</html>
