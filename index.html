@@ -1229,9 +1229,19 @@
                 totalPrice: totalPrice
             };
 
-            if(window.saveBookingToCloud) {
-                await window.saveBookingToCloud(newBooking);
+            // Intentar guardar en la nube sin trabar el envío
+            try {
+                if(window.saveBookingToCloud) {
+                    window.saveBookingToCloud(newBooking);
+                }
+            } catch(err) {
+                console.log("Guardando reserva localmente:", err);
             }
+
+            // Muestra en tu Panel si estás conectado
+            if (!window.bookings) window.bookings = [];
+            window.bookings.unshift(newBooking);
+            localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
 
             const msgText = `Hola Ayrton! Quisiera reservar un turno:\n- Nombre: ${name}\n- Servicio: ${serviceName}\n- Fecha: ${date}\n- Hora: ${time}\n- Estado de pago: ${depositText}\n- Mi Teléfono: ${phone}`;
             const waUrl = `https://wa.me/5493425913679?text=${encodeURIComponent(msgText)}`;
@@ -1245,7 +1255,10 @@
             waBtn.href = waUrl;
             successBox.classList.remove('hidden');
 
-            showToast("¡Turno guardado! Abre WhatsApp para enviar.");
+            showToast("¡Turno guardado!");
+            
+            // Redireccionar a WhatsApp de inmediato en su celular
+            window.open(waUrl, '_blank');
         }
 
         function resetBookingForm() {
