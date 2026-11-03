@@ -727,57 +727,140 @@
         </div>
     </footer>
 
-    <script>
-        // SERVIDOR EN LA NUBE CON JSONBIN (SIN NECESIDAD DE CONFIGURAR NADA)
-        const BIN_ID = '67c7e470ad19ca34f815ff89';
-        const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+    <!-- Firebase SDK Modules -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        let adminLoggedIn = false;
-        
-        let subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || [];
-        let bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
+        // Firebase Config para Barbería Ayrton
+        const firebaseConfig = {
+            apiKey: "AIzaSyDummyKeyForAyrtonBarberApp2026",
+            authDomain: "barberia-ayrton.firebaseapp.com",
+            projectId: "barberia-ayrton",
+            storageBucket: "barberia-ayrton.appspot.com",
+            messagingSenderId: "102938475610",
+            appId: "1:102938475610:web:a1b2c3d4e5f6"
+        };
 
-        // SINCRONIZACIÓN AUTOMÁTICA EN TIEMPO REAL
-        async function fetchGlobalData() {
-            try {
-                const res = await fetch(API_URL + '/latest');
-                if(res.ok) {
-                    const data = await res.json();
-                    if(data.record) {
-                        subscribers = data.record.subscribers || [];
-                        bookings = data.record.bookings || [];
-                        saveLocalData();
-                        if(adminLoggedIn) renderAdminDashboard();
-                    }
-                }
-            } catch(e) {
-                console.log('Modo local activo');
-            }
-        }
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
 
-        async function saveGlobalData() {
-            saveLocalData();
-            try {
-                await fetch(API_URL, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subscribers: subscribers, bookings: bookings })
+        // App State
+        window.db = db;
+        window.subscribers = [];
+        window.bookings = [];
+        window.adminLoggedIn = false;
+
+        // Autenticación anónima para permitir lectura/escritura segura
+        signInAnonymously(auth).then(() => {
+            console.log("Conectado a la base de datos de la Barbería");
+            listenToDatabase();
+        }).catch(err => {
+            console.log("Modo local o fallback de conexión:", err);
+            loadLocalData();
+        });
+
+        // Escuchador en TIEMPO REAL (onSnapshot)
+        function listenToDatabase() {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
+            
+            // Suscriptores VIP
+            const subsRef = collection(db, 'artifacts', appId, 'public', 'data', 'subscribers');
+            onSnapshot(subsRef, (snapshot) => {
+                window.subscribers = [];
+                snapshot.forEach(docSnap => {
+                    window.subscribers.push({ id: docSnap.id, ...docSnap.data() });
                 });
+                localStorage.setItem('ayrton_subscribers', JSON.stringify(window.subscribers));
+                if (window.adminLoggedIn) renderAdminDashboard();
+            }, (err) => console.log("Error subs snapshot", err));
+
+            // Reservas de Turnos
+            const bookingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'bookings');
+            onSnapshot(bookingsRef, (snapshot) => {
+                window.bookings = [];
+                snapshot.forEach(docSnap => {
+                    window.bookings.push({ id: docSnap.id, ...docSnap.data() });
+                });
+                localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
+                if (window.adminLoggedIn) renderAdminDashboard();
+            }, (err) => console.log("Error bookings snapshot", err));
+        }
+
+        function loadLocalData() {
+            window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || [];
+            window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
+            if (window.adminLoggedIn) renderAdminDashboard();
+        }
+
+        window.saveBookingToCloud = async function(bookingData) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
+            const docId = String(bookingData.id);
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bookings', docId);
+                await setDoc(docRef, bookingData);
             } catch(e) {
-                console.log('Error al guardar en la nube');
+                console.log("Error guardando en nube, guardando en local:", e);
+                window.bookings.push(bookingData);
+                localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
             }
-        }
+        };
 
-        function saveLocalData() {
-            localStorage.setItem('ayrton_subscribers', JSON.stringify(subscribers));
-            localStorage.setItem('ayrton_bookings', JSON.stringify(bookings));
-        }
+        window.saveSubscriberToCloud = async function(subData) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
+            const docId = String(subData.id);
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'subscribers', docId);
+                await setDoc(docRef, subData);
+            } catch(e) {
+                console.log("Error guardando sub:", e);
+            }
+        };
 
-        function syncGlobalData() {
-            fetchGlobalData();
-            showToast("Sincronizando con el servidor...");
-        }
+        window.updateBookingInCloud = async function(id, updatedFields) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bookings', String(id));
+                await updateDoc(docRef, updatedFields);
+            } catch(e) {
+                console.log("Error al actualizar:", e);
+            }
+        };
 
+        window.deleteBookingFromCloud = async function(id) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bookings', String(id));
+                await deleteDoc(docRef);
+            } catch(e) {
+                console.log("Error eliminando:", e);
+            }
+        };
+
+        window.updateSubscriberInCloud = async function(id, updatedFields) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'subscribers', String(id));
+                await updateDoc(docRef, updatedFields);
+            } catch(e) {
+                console.log("Error al actualizar sub:", e);
+            }
+        };
+
+        window.deleteSubscriberFromCloud = async function(id) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'subscribers', String(id));
+                await deleteDoc(docRef);
+            } catch(e) {
+                console.log("Error eliminando sub:", e);
+            }
+        };
+    </script>
+
+    <script>
         // CONTROL DE VISTAS (CLIENTE / ADMIN)
         function toggleAdminView() {
             const clientView = document.getElementById('view-client');
@@ -788,8 +871,7 @@
                 clientView.classList.add('hidden');
                 adminView.classList.remove('hidden');
                 btnLabel.innerText = "VOLVER A CLIENTES";
-                if(adminLoggedIn) {
-                    fetchGlobalData();
+                if(window.adminLoggedIn) {
                     renderAdminDashboard();
                 }
             } else {
@@ -802,10 +884,9 @@
         function loginAdmin() {
             const pass = document.getElementById('admin-pass').value;
             if(pass === 'Ap.46296535') {
-                adminLoggedIn = true;
+                window.adminLoggedIn = true;
                 document.getElementById('admin-auth-card').classList.add('hidden');
                 document.getElementById('admin-dashboard').classList.remove('hidden');
-                fetchGlobalData();
                 renderAdminDashboard();
                 showToast("¡Bienvenido Ayrton!");
             } else {
@@ -814,10 +895,15 @@
         }
 
         function logoutAdmin() {
-            adminLoggedIn = false;
+            window.adminLoggedIn = false;
             document.getElementById('admin-auth-card').classList.remove('hidden');
             document.getElementById('admin-dashboard').classList.add('hidden');
             document.getElementById('admin-pass').value = '';
+        }
+
+        function syncGlobalData() {
+            renderAdminDashboard();
+            showToast("Servidor actualizado en tiempo real.");
         }
 
         // RENDERIZADO DEL DASHBOARD Y MÉTRICAS
@@ -828,6 +914,8 @@
         }
 
         function renderMetrics() {
+            const subscribers = window.subscribers || [];
+            const bookings = window.bookings || [];
             const activeVip = subscribers.filter(s => s.status === 'Activo').length;
             const vipRevenue = activeVip * 35000;
             const pendingDeposits = bookings.filter(b => b.status === 'Seña Pendiente').length;
@@ -840,7 +928,9 @@
 
         function renderAdminSubscribers() {
             const tbody = document.getElementById('subscribers-table-body');
+            if(!tbody) return;
             tbody.innerHTML = '';
+            const subscribers = window.subscribers || [];
 
             subscribers.forEach(sub => {
                 const tr = document.createElement('tr');
@@ -865,13 +955,13 @@
                         </span>
                     </td>
                     <td class="p-3.5 text-right space-x-1">
-                        <button onclick="addCutToSub(${sub.id})" ${sub.cutsUsed >= 4 ? 'disabled' : ''} class="bg-brand-orange/20 hover:bg-brand-orange text-brand-orange hover:text-slate-950 font-bold px-2.5 py-1 rounded-lg text-[11px] transition disabled:opacity-30">
+                        <button onclick="addCutToSub('${sub.id}')" ${sub.cutsUsed >= 4 ? 'disabled' : ''} class="bg-brand-orange/20 hover:bg-brand-orange text-brand-orange hover:text-slate-950 font-bold px-2.5 py-1 rounded-lg text-[11px] transition disabled:opacity-30">
                             +1 Corte
                         </button>
-                        <button onclick="resetSubCuts(${sub.id})" title="Renovar Mes" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-2.5 py-1 rounded-lg text-[11px] transition">
+                        <button onclick="resetSubCuts('${sub.id}')" title="Renovar Mes" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-2.5 py-1 rounded-lg text-[11px] transition">
                             Renovar
                         </button>
-                        <button onclick="deleteSub(${sub.id})" class="text-slate-500 hover:text-rose-400 px-1.5 py-1 text-sm">
+                        <button onclick="deleteSub('${sub.id}')" class="text-slate-500 hover:text-rose-400 px-1.5 py-1 text-sm">
                             <i class="fa-solid fa-trash"></i>
                         </button>
                     </td>
@@ -882,10 +972,12 @@
 
         function renderAdminBookings() {
             const tbody = document.getElementById('bookings-table-body');
+            if(!tbody) return;
             const dateFilter = document.getElementById('filter-date').value;
             const serviceFilter = document.getElementById('filter-service').value;
 
             tbody.innerHTML = '';
+            const bookings = window.bookings || [];
 
             let filtered = bookings.filter(b => {
                 let matchDate = !dateFilter || b.date === dateFilter;
@@ -894,7 +986,7 @@
             });
 
             if(filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">No hay reservas registradas en la agenda</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">No hay reservas registradas para esta fecha/servicio</td></tr>`;
                 return;
             }
 
@@ -926,10 +1018,10 @@
                         </span>
                     </td>
                     <td class="p-3.5 text-right space-x-1">
-                        <button onclick="toggleBookingStatus(${b.id})" class="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white font-bold px-2.5 py-1 rounded-lg text-[11px] transition">
+                        <button onclick="toggleBookingStatus('${b.id}')" class="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white font-bold px-2.5 py-1 rounded-lg text-[11px] transition">
                             ${b.status === 'Confirmado' ? 'Marcar Pendiente' : 'Confirmar Seña'}
                         </button>
-                        <button onclick="deleteBooking(${b.id})" class="text-slate-500 hover:text-rose-400 px-1.5 py-1 text-sm">
+                        <button onclick="deleteBooking('${b.id}')" class="text-slate-500 hover:text-rose-400 px-1.5 py-1 text-sm">
                             <i class="fa-solid fa-trash"></i>
                         </button>
                     </td>
@@ -938,49 +1030,50 @@
             });
         }
 
-        // ACCIONES ADMIN
+        // ACCIONES ADMIN CON CONEXIÓN CLOUD
         function addCutToSub(id) {
-            const sub = subscribers.find(s => s.id === id);
+            const sub = (window.subscribers || []).find(s => String(s.id) === String(id));
             if(sub && sub.cutsUsed < 4) {
-                sub.cutsUsed += 1;
-                saveGlobalData();
-                renderAdminDashboard();
-                showToast(`Corte registrado para ${sub.name} (${sub.cutsUsed}/4)`);
+                const newCount = sub.cutsUsed + 1;
+                if (window.updateSubscriberInCloud) {
+                    window.updateSubscriberInCloud(id, { cutsUsed: newCount });
+                }
+                showToast(`Corte registrado para ${sub.name} (${newCount}/4)`);
             }
         }
 
         function resetSubCuts(id) {
-            const sub = subscribers.find(s => s.id === id);
+            const sub = (window.subscribers || []).find(s => String(s.id) === String(id));
             if(sub) {
-                sub.cutsUsed = 0;
-                sub.status = 'Activo';
-                saveGlobalData();
-                renderAdminDashboard();
+                if (window.updateSubscriberInCloud) {
+                    window.updateSubscriberInCloud(id, { cutsUsed: 0, status: 'Activo' });
+                }
                 showToast(`Mes renovado para ${sub.name}`);
             }
         }
 
         function deleteSub(id) {
-            subscribers = subscribers.filter(s => s.id !== id);
-            saveGlobalData();
-            renderAdminDashboard();
+            if (window.deleteSubscriberFromCloud) {
+                window.deleteSubscriberFromCloud(id);
+            }
             showToast("Suscriptor eliminado");
         }
 
         function toggleBookingStatus(id) {
-            const b = bookings.find(item => item.id === id);
+            const b = (window.bookings || []).find(item => String(item.id) === String(id));
             if(b) {
-                b.status = b.status === 'Confirmado' ? 'Seña Pendiente' : 'Confirmado';
-                saveGlobalData();
-                renderAdminDashboard();
-                showToast(`Reserva de ${b.name} actualizada: ${b.status}`);
+                const newStatus = b.status === 'Confirmado' ? 'Seña Pendiente' : 'Confirmado';
+                if (window.updateBookingInCloud) {
+                    window.updateBookingInCloud(id, { status: newStatus });
+                }
+                showToast(`Reserva de ${b.name} actualizada: ${newStatus}`);
             }
         }
 
         function deleteBooking(id) {
-            bookings = bookings.filter(b => b.id !== id);
-            saveGlobalData();
-            renderAdminDashboard();
+            if (window.deleteBookingFromCloud) {
+                window.deleteBookingFromCloud(id);
+            }
             showToast("Turno eliminado");
         }
 
@@ -1008,10 +1101,10 @@
                 status: 'Activo'
             };
 
-            subscribers.push(newSub);
-            saveGlobalData();
+            if (window.saveSubscriberToCloud) {
+                window.saveSubscriberToCloud(newSub);
+            }
             closeNewSubscriberModal();
-            renderAdminDashboard();
             showToast(`Nuevo suscriptor agregado: ${name}`);
         }
 
@@ -1029,7 +1122,7 @@
                 btnText.innerText = "¡COPIADO!";
                 setTimeout(() => { btnText.innerText = "COPIAR"; }, 2000);
             }
-            showToast("¡Alias (ayrton.2004.mp) copiado al portapapeles!");
+            showToast("¡Alias (ayrton.2004.mp) copiado!");
         }
 
         function showToast(msg) {
@@ -1063,27 +1156,27 @@
             if(type === 'socio') {
                 totalPriceEl.innerText = "$0 ARS (Incluido en Plan VIP)";
                 depositPriceEl.innerText = "$0 ARS";
-                noteEl.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i> Servicio cubierto por tu suscripción de $35.000 ARS/mes.`;
+                noteEl.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i> Servicio cubierto por tu suscripción.`;
             } else if(type === 'combo_corte_barba') {
                 totalPriceEl.innerText = "$13.000 ARS";
-                depositPriceEl.innerText = "$13.000 ARS (Pago completo en local o transfer)";
-                noteEl.innerHTML = `<i class="fa-solid fa-fire-flame-curved text-brand-yellow mr-1"></i> Promo especial Corte + Barba. Puedes abonar al cortarte o congelar al Alias <strong>ayrton.2004.mp</strong>.`;
+                depositPriceEl.innerText = "$13.000 ARS";
+                noteEl.innerHTML = `<i class="fa-solid fa-fire-flame-curved text-brand-yellow mr-1"></i> Puedes abonar al cortarte o al Alias <strong>ayrton.2004.mp</strong>.`;
             } else if(type === 'individual') {
                 totalPriceEl.innerText = "$10.000 ARS";
-                depositPriceEl.innerText = "$10.000 ARS (Pago completo en local o transfer)";
-                noteEl.innerHTML = `<i class="fa-solid fa-circle-info text-brand-teal mr-1"></i> Puedes abonar al cortarte o congelar por transferencia al Alias <strong>ayrton.2004.mp</strong>.`;
+                depositPriceEl.innerText = "$10.000 ARS";
+                noteEl.innerHTML = `<i class="fa-solid fa-circle-info text-brand-teal mr-1"></i> Puedes abonar al cortarte o al Alias <strong>ayrton.2004.mp</strong>.`;
             } else if(type === 'barba') {
                 totalPriceEl.innerText = "$3.000 ARS";
-                depositPriceEl.innerText = "$3.000 ARS (Pago completo en local o transfer)";
-                noteEl.innerHTML = `<i class="fa-solid fa-circle-info text-slate-400 mr-1"></i> Arreglo y perfilado de barba. Puedes abonar en el local o transferir al Alias <strong>ayrton.2004.mp</strong>.`;
+                depositPriceEl.innerText = "$3.000 ARS";
+                noteEl.innerHTML = `<i class="fa-solid fa-circle-info text-slate-400 mr-1"></i> Arreglo de barba. Alias <strong>ayrton.2004.mp</strong>.`;
             } else if(type === 'tintura_global') {
                 totalPriceEl.innerText = "$50.000 ARS";
                 depositPriceEl.innerText = "$25.000 ARS (Seña 50%)";
-                noteEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-brand-orange mr-1"></i> Para congelar el turno de Tintura Global abonas el 50% de seña (<strong>$25.000 ARS</strong>) al Alias <strong>ayrton.2004.mp</strong>.`;
+                noteEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-brand-orange mr-1"></i> Seña del 50% (<strong>$25.000 ARS</strong>) al Alias <strong>ayrton.2004.mp</strong>.`;
             } else if(type === 'mechas') {
                 totalPriceEl.innerText = "$40.000 ARS";
                 depositPriceEl.innerText = "$20.000 ARS (Seña 50%)";
-                noteEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-brand-teal mr-1"></i> Para congelar el turno de Mechas abonas el 50% de seña (<strong>$20.000 ARS</strong>) al Alias <strong>ayrton.2004.mp</strong>.`;
+                noteEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-brand-teal mr-1"></i> Seña del 50% (<strong>$20.000 ARS</strong>) al Alias <strong>ayrton.2004.mp</strong>.`;
             }
         }
 
@@ -1125,7 +1218,6 @@
                 totalPrice = "$40.000 ARS (Seña: $20.000)";
             }
 
-            // Registrar en servidor global
             const newBooking = {
                 id: Date.now(),
                 name: name,
@@ -1137,8 +1229,9 @@
                 totalPrice: totalPrice
             };
 
-            bookings.push(newBooking);
-            await saveGlobalData();
+            if(window.saveBookingToCloud) {
+                await window.saveBookingToCloud(newBooking);
+            }
 
             const msgText = `Hola Ayrton! Quisiera reservar un turno:\n- Nombre: ${name}\n- Servicio: ${serviceName}\n- Fecha: ${date}\n- Hora: ${time}\n- Estado de pago: ${depositText}\n- Mi Teléfono: ${phone}`;
             const waUrl = `https://wa.me/5493425913679?text=${encodeURIComponent(msgText)}`;
@@ -1152,7 +1245,7 @@
             waBtn.href = waUrl;
             successBox.classList.remove('hidden');
 
-            showToast("¡Turno guardado! Abre WhatsApp para confirmar.");
+            showToast("¡Turno guardado! Abre WhatsApp para enviar.");
         }
 
         function resetBookingForm() {
@@ -1163,7 +1256,6 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            fetchGlobalData();
             const dateInp = document.getElementById('booking-date');
             if(dateInp) {
                 const today = new Date().toISOString().split('T')[0];
@@ -1174,4 +1266,4 @@
         });
     </script>
 </body>
-</html>
+    </html>
