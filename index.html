@@ -727,140 +727,50 @@
         </div>
     </footer>
 
-    <!-- Firebase SDK Modules -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Firebase Config para Barbería Ayrton
-        const firebaseConfig = {
-            apiKey: "AIzaSyDummyKeyForAyrtonBarberApp2026",
-            authDomain: "barberia-ayrton.firebaseapp.com",
-            projectId: "barberia-ayrton",
-            storageBucket: "barberia-ayrton.appspot.com",
-            messagingSenderId: "102938475610",
-            appId: "1:102938475610:web:a1b2c3d4e5f6"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
+    <!-- Script de Gestión de Turnos y Almacenamiento Ultra Rápido -->
+    <script>
         // App State
-        window.db = db;
-        window.subscribers = [];
-        window.bookings = [];
+        window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || [];
+        window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
         window.adminLoggedIn = false;
 
-        // Autenticación anónima para permitir lectura/escritura segura
-        signInAnonymously(auth).then(() => {
-            console.log("Conectado a la base de datos de la Barbería");
-            listenToDatabase();
-        }).catch(err => {
-            console.log("Modo local o fallback de conexión:", err);
-            loadLocalData();
-        });
-
-        // Escuchador en TIEMPO REAL (onSnapshot)
-        function listenToDatabase() {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
-            
-            // Suscriptores VIP
-            const subsRef = collection(db, 'artifacts', appId, 'public', 'data', 'subscribers');
-            onSnapshot(subsRef, (snapshot) => {
-                window.subscribers = [];
-                snapshot.forEach(docSnap => {
-                    window.subscribers.push({ id: docSnap.id, ...docSnap.data() });
-                });
-                localStorage.setItem('ayrton_subscribers', JSON.stringify(window.subscribers));
-                if (window.adminLoggedIn) renderAdminDashboard();
-            }, (err) => console.log("Error subs snapshot", err));
-
-            // Reservas de Turnos
-            const bookingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'bookings');
-            onSnapshot(bookingsRef, (snapshot) => {
-                window.bookings = [];
-                snapshot.forEach(docSnap => {
-                    window.bookings.push({ id: docSnap.id, ...docSnap.data() });
-                });
-                localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
-                if (window.adminLoggedIn) renderAdminDashboard();
-            }, (err) => console.log("Error bookings snapshot", err));
-        }
-
-        function loadLocalData() {
-            window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || [];
-            window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
-            if (window.adminLoggedIn) renderAdminDashboard();
-        }
-
+        // Guardar reserva localmente
         window.saveBookingToCloud = async function(bookingData) {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
-            const docId = String(bookingData.id);
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bookings', docId);
-                await setDoc(docRef, bookingData);
-            } catch(e) {
-                console.log("Error guardando en nube, guardando en local:", e);
-                window.bookings.push(bookingData);
-                localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
-            }
+            if (!window.bookings) window.bookings = [];
+            window.bookings.unshift(bookingData);
+            localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
         };
 
         window.saveSubscriberToCloud = async function(subData) {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
-            const docId = String(subData.id);
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'subscribers', docId);
-                await setDoc(docRef, subData);
-            } catch(e) {
-                console.log("Error guardando sub:", e);
-            }
+            if (!window.subscribers) window.subscribers = [];
+            window.subscribers.unshift(subData);
+            localStorage.setItem('ayrton_subscribers', JSON.stringify(window.subscribers));
         };
 
         window.updateBookingInCloud = async function(id, updatedFields) {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bookings', String(id));
-                await updateDoc(docRef, updatedFields);
-            } catch(e) {
-                console.log("Error al actualizar:", e);
-            }
+            window.bookings = (window.bookings || []).map(b => String(b.id) === String(id) ? { ...b, ...updatedFields } : b);
+            localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
+            if(window.adminLoggedIn) renderAdminDashboard();
         };
 
         window.deleteBookingFromCloud = async function(id) {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bookings', String(id));
-                await deleteDoc(docRef);
-            } catch(e) {
-                console.log("Error eliminando:", e);
-            }
+            window.bookings = (window.bookings || []).filter(b => String(b.id) !== String(id));
+            localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
+            if(window.adminLoggedIn) renderAdminDashboard();
         };
 
         window.updateSubscriberInCloud = async function(id, updatedFields) {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'subscribers', String(id));
-                await updateDoc(docRef, updatedFields);
-            } catch(e) {
-                console.log("Error al actualizar sub:", e);
-            }
+            window.subscribers = (window.subscribers || []).map(s => String(s.id) === String(id) ? { ...s, ...updatedFields } : s);
+            localStorage.setItem('ayrton_subscribers', JSON.stringify(window.subscribers));
+            if(window.adminLoggedIn) renderAdminDashboard();
         };
 
         window.deleteSubscriberFromCloud = async function(id) {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'barberia-ayrton-app';
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'subscribers', String(id));
-                await deleteDoc(docRef);
-            } catch(e) {
-                console.log("Error eliminando sub:", e);
-            }
+            window.subscribers = (window.subscribers || []).filter(s => String(s.id) !== String(id));
+            localStorage.setItem('ayrton_subscribers', JSON.stringify(window.subscribers));
+            if(window.adminLoggedIn) renderAdminDashboard();
         };
-    </script>
 
-    <script>
         // CONTROL DE VISTAS (CLIENTE / ADMIN)
         function toggleAdminView() {
             const clientView = document.getElementById('view-client');
@@ -1229,22 +1139,13 @@
                 totalPrice: totalPrice
             };
 
-            // Intentar guardar en la nube sin trabar el envío
-            try {
-                if(window.saveBookingToCloud) {
-                    window.saveBookingToCloud(newBooking);
-                }
-            } catch(err) {
-                console.log("Guardando reserva localmente:", err);
-            }
-
-            // Muestra en tu Panel si estás conectado
+            // Guardar al instante sin esperar llamadas asíncronas lentas
             if (!window.bookings) window.bookings = [];
             window.bookings.unshift(newBooking);
             localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
 
             const msgText = `Hola Ayrton! Quisiera reservar un turno:\n- Nombre: ${name}\n- Servicio: ${serviceName}\n- Fecha: ${date}\n- Hora: ${time}\n- Estado de pago: ${depositText}\n- Mi Teléfono: ${phone}`;
-            const waUrl = `https://wa.me/5493425913679?text=${encodeURIComponent(msgText)}`;
+            const waUrl = `https://api.whatsapp.com/send?phone=5493425913679&text=${encodeURIComponent(msgText)}`;
 
             document.getElementById('booking-form').classList.add('hidden');
             const successBox = document.getElementById('booking-success');
@@ -1255,10 +1156,10 @@
             waBtn.href = waUrl;
             successBox.classList.remove('hidden');
 
-            showToast("¡Turno guardado!");
+            showToast("¡Turno listo! Abriendo WhatsApp...");
             
-            // Redireccionar a WhatsApp de inmediato en su celular
-            window.open(waUrl, '_blank');
+            // Redirección instantánea y directa a WhatsApp
+            window.location.href = waUrl;
         }
 
         function resetBookingForm() {
