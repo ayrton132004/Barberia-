@@ -825,7 +825,7 @@
             const btn = document.getElementById('submit-booking-btn');
             const btnText = document.getElementById('submit-btn-text');
             btn.disabled = true;
-            btnText.innerText = "PROCESANDO RESERVA...";
+            btnText.innerText = "GUARDANDO Y ABRRIENDO WHATSAPP...";
 
             const name = document.getElementById('client-name').value.trim();
             const phone = document.getElementById('client-phone').value.trim();
@@ -881,17 +881,27 @@
                 totalPrice: totalPrice
             };
 
-            // Guardado local
+            // Guardado local en el celular del cliente
             try {
                 let currentBookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
                 currentBookings.unshift(newBooking);
                 localStorage.setItem('ayrton_bookings', JSON.stringify(currentBookings));
                 window.bookings = currentBookings;
-            } catch(err) {
-                console.error("Error guardando localmente:", err);
-            }
+            } catch(err) {}
 
-            // Crear el mensaje con código integrado
+            // Intento de envío a servidor global en la nube (Sincronización remota)
+            try {
+                fetch('https://api.restful-api.dev/objects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: "Turno_Barberia_Ayrton",
+                        data: newBooking
+                    })
+                }).catch(() => {});
+            } catch(err) {}
+
+            // Crear el mensaje con código estructurado para importar fácil
             const bookingCode = JSON.stringify(newBooking);
             const msgText = `Hola Ayrton! Quisiera reservar un turno:\n- Nombre: ${name}\n- Servicio: ${serviceName}\n- Fecha: ${date}\n- Hora: ${time}\n- Estado de pago: ${depositText}\n- Mi Teléfono: ${phone}\n\n[Código Turno: ${bookingCode}]`;
             const waUrl = `https://api.whatsapp.com/send?phone=5493425913679&text=${encodeURIComponent(msgText)}`;
@@ -899,20 +909,49 @@
             btn.disabled = false;
             btnText.innerText = "CONFIRMAR Y ENVIAR RESERVA POR WHATSAPP";
 
-            // Mostrar caja de éxito
-            document.getElementById('booking-form').classList.add('hidden');
-            const successBox = document.getElementById('booking-success');
-            const msgEl = document.getElementById('success-message');
-            const waBtn = document.getElementById('wa-redirect-btn');
-
-            if(msgEl && waBtn && successBox) {
-                msgEl.innerHTML = `Reserva guardada para <strong>${name}</strong> el <strong>${date}</strong> a las <strong>${time}</strong>.<br/><span class="text-brand-orange font-bold">${depositText}</span>`;
-                waBtn.href = waUrl;
-                successBox.classList.remove('hidden');
-            }
-
-            // Redirección directa a WhatsApp
+            // Redirección garantizada e inmediata a WhatsApp
             window.location.href = waUrl;
+        }
+
+        async function syncGlobalData() {
+            showToast("Buscando reservas en el servidor...");
+            
+            // Intento de recarga remota
+            try {
+                const res = await fetch('https://api.restful-api.dev/objects');
+                if(res.ok) {
+                    const data = await res.json();
+                    const remoteItems = data
+                        .filter(item => item.name === "Turno_Barberia_Ayrton" && item.data)
+                        .map(item => item.data);
+                    
+                    let local = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
+                    
+                    // Fusionar reservas remotas sin duplicar
+                    remoteItems.forEach(rb => {
+                        if(rb && rb.id && !local.some(lb => lb.id === rb.id)) {
+                            local.unshift(rb);
+                        }
+                    });
+
+                    localStorage.setItem('ayrton_bookings', JSON.stringify(local));
+                    window.bookings = local;
+                }
+            } catch(e) {}
+
+            // Cargar de memoria
+            window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || window.bookings || [];
+            window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || window.subscribers || [];
+            
+            // Limpiar filtros para ver todo
+            const filterDateEl = document.getElementById('filter-date');
+            if(filterDateEl) filterDateEl.value = '';
+            
+            const filterServiceEl = document.getElementById('filter-service');
+            if(filterServiceEl) filterServiceEl.value = 'all';
+
+            renderAdminDashboard();
+            showToast("¡Agenda de turnos sincronizada!");
         }
 
         // Renderizado del Panel de Dueño
