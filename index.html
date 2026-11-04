@@ -483,9 +483,9 @@
                             </p>
                         </div>
 
-                        <button type="submit" class="w-full bg-gradient-to-r from-brand-orange to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-slate-950 font-black py-4 rounded-xl text-base shadow-lg transition flex items-center justify-center space-x-2">
+                        <button type="submit" id="submit-booking-btn" class="w-full bg-gradient-to-r from-brand-orange to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-slate-950 font-black py-4 rounded-xl text-base shadow-lg transition flex items-center justify-center space-x-2">
                             <i class="fa-solid fa-paper-plane"></i>
-                            <span>CONFIRMAR Y ENVIAR RESERVA POR WHATSAPP</span>
+                            <span id="submit-btn-text">CONFIRMAR Y ENVIAR RESERVA POR WHATSAPP</span>
                         </button>
                     </form>
 
@@ -1010,13 +1010,20 @@
             const btn = document.getElementById('submit-booking-btn');
             const btnText = document.getElementById('submit-btn-text');
             btn.disabled = true;
-            btnText.innerText = "GUARDANDO EN SERVIDOR...";
+            btnText.innerText = "PROCESANDO RESERVA...";
 
-            const name = document.getElementById('client-name').value;
-            const phone = document.getElementById('client-phone').value;
+            const name = document.getElementById('client-name').value.trim();
+            const phone = document.getElementById('client-phone').value.trim();
             const type = document.getElementById('service-select').value;
             const date = document.getElementById('booking-date').value;
             const time = document.getElementById('booking-time').value;
+
+            if(!name || !phone || !date || !time) {
+                alert("Por favor completa todos los campos requeridos.");
+                btn.disabled = false;
+                btnText.innerText = "CONFIRMAR Y ENVIAR RESERVA POR WHATSAPP";
+                return;
+            }
 
             let serviceName = "";
             let depositText = "";
@@ -1059,11 +1066,17 @@
                 totalPrice: totalPrice
             };
 
-            // Guardar datos en local y armar código de respaldo
-            if (!window.bookings) window.bookings = [];
-            window.bookings.unshift(newBooking);
-            localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
+            // Guardado ultra rápido local
+            try {
+                let currentBookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
+                currentBookings.unshift(newBooking);
+                localStorage.setItem('ayrton_bookings', JSON.stringify(currentBookings));
+                window.bookings = currentBookings;
+            } catch(err) {
+                console.error("Error guardando localmente:", err);
+            }
 
+            // Crear enlace de WhatsApp con el código de turno para que puedas agregarlo con 1 clic
             const bookingCode = JSON.stringify(newBooking);
             const msgText = `Hola Ayrton! Quisiera reservar un turno:\n- Nombre: ${name}\n- Servicio: ${serviceName}\n- Fecha: ${date}\n- Hora: ${time}\n- Estado de pago: ${depositText}\n- Mi Teléfono: ${phone}\n\n[Código Turno: ${bookingCode}]`;
             const waUrl = `https://api.whatsapp.com/send?phone=5493425913679&text=${encodeURIComponent(msgText)}`;
@@ -1071,20 +1084,20 @@
             btn.disabled = false;
             btnText.innerText = "CONFIRMAR Y ENVIAR RESERVA POR WHATSAPP";
 
+            // Mostrar caja de éxito e ir a WhatsApp al instante
             document.getElementById('booking-form').classList.add('hidden');
             const successBox = document.getElementById('booking-success');
             const msgEl = document.getElementById('success-message');
             const waBtn = document.getElementById('wa-redirect-btn');
 
-            msgEl.innerHTML = `Reserva guardada para <strong>${name}</strong> el <strong>${date}</strong> a las <strong>${time}</strong>.<br/><span class="text-brand-orange font-bold">${depositText}</span>`;
-            waBtn.href = waUrl;
-            successBox.classList.remove('hidden');
+            if(msgEl && waBtn && successBox) {
+                msgEl.innerHTML = `Reserva guardada para <strong>${name}</strong> el <strong>${date}</strong> a las <strong>${time}</strong>.<br/><span class="text-brand-orange font-bold">${depositText}</span>`;
+                waBtn.href = waUrl;
+                successBox.classList.remove('hidden');
+            }
 
-            showToast("¡Reserva guardada! Redirigiendo a WhatsApp...");
-            
-            setTimeout(() => {
-                window.location.href = waUrl;
-            }, 600);
+            // Abrir WhatsApp directamente
+            window.location.href = waUrl;
         }
 
         function resetBookingForm() {
