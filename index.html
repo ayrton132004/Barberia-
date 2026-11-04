@@ -734,7 +734,7 @@
 
     <!-- Script de Gestión de Turnos y Almacenamiento Ultra Rápido -->
     <script>
-        // App State
+        // App State Global
         window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || [];
         window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
         window.adminLoggedIn = false;
@@ -750,8 +750,8 @@
                 document.getElementById('admin-auth-card').classList.add('hidden');
                 document.getElementById('admin-dashboard').classList.remove('hidden');
                 
-                // Mostrar datos guardados
-                renderAdminDashboard();
+                // Cargar datos
+                syncGlobalData();
                 showToast("¡Bienvenido Ayrton!");
             } else {
                 alert("Contraseña incorrecta.");
@@ -764,7 +764,7 @@
             document.getElementById('admin-auth-card').classList.remove('hidden');
             const passInput = document.getElementById('admin-pass');
             if(passInput) passInput.value = '';
-            showToast("Sesión cerrada correctamente.");
+            showToast("Sesión cerrada.");
         }
 
         function toggleAdminView() {
@@ -780,7 +780,7 @@
                 if (window.adminLoggedIn) {
                     document.getElementById('admin-auth-card').classList.add('hidden');
                     document.getElementById('admin-dashboard').classList.remove('hidden');
-                    renderAdminDashboard();
+                    syncGlobalData();
                 } else {
                     document.getElementById('admin-auth-card').classList.remove('hidden');
                     document.getElementById('admin-dashboard').classList.add('hidden');
@@ -793,10 +793,10 @@
         }
 
         function syncGlobalData() {
+            // Cargar de memoria y resetear filtros
             window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || window.bookings || [];
             window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || window.subscribers || [];
             
-            // Limpiar filtros para mostrar todo
             const filterDateEl = document.getElementById('filter-date');
             if(filterDateEl) filterDateEl.value = '';
             
@@ -804,7 +804,7 @@
             if(filterServiceEl) filterServiceEl.value = 'all';
 
             renderAdminDashboard();
-            showToast("Lista actualizada.");
+            showToast("Agenda actualizada.");
         }
 
         function importBookingsPrompt() {
@@ -822,14 +822,16 @@
                             list.unshift(parsed);
                             localStorage.setItem('ayrton_bookings', JSON.stringify(list));
                             window.bookings = list;
-                            renderAdminDashboard();
-                            showToast("¡Turno cargado con éxito en el panel!");
+                            syncGlobalData();
+                            showToast("¡Turno guardado con éxito!");
                         } else {
                             showToast("Este turno ya figuraba en la agenda.");
                         }
+                    } else {
+                        showToast("Formato no reconocido.");
                     }
                 } catch(e) {
-                    showToast("No se detectó un código de turno válido.");
+                    showToast("No se detectó un código válido en el texto.");
                 }
             }
         }
@@ -844,7 +846,7 @@
             const time = document.getElementById('booking-time').value;
 
             if(!name || !phone || !date || !time) {
-                alert("Por favor completa todos los campos requeridos.");
+                alert("Completa todos los campos obligatorios.");
                 return;
             }
 
@@ -889,7 +891,7 @@
                 totalPrice: totalPrice
             };
 
-            // Guardado local
+            // Guardar en almacenamiento local del cliente
             try {
                 let currentBookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
                 currentBookings.unshift(newBooking);
@@ -897,16 +899,16 @@
                 window.bookings = currentBookings;
             } catch(err) {}
 
-            // Crear mensaje para WhatsApp con código estructurado
+            // Formatear mensaje para WhatsApp
             const bookingCode = JSON.stringify(newBooking);
             const msgText = `Hola Ayrton! Quisiera reservar un turno:\n- Nombre: ${name}\n- Servicio: ${serviceName}\n- Fecha: ${date}\n- Hora: ${time}\n- Estado de pago: ${depositText}\n- Mi Teléfono: ${phone}\n\n[Código Turno: ${bookingCode}]`;
             const waUrl = `https://api.whatsapp.com/send?phone=5493425913679&text=${encodeURIComponent(msgText)}`;
 
-            // Abrir WhatsApp de inmediato
+            // Abrir WhatsApp al instante sin demoras
             window.location.href = waUrl;
         }
 
-        // Renderizado del Panel de Dueño
+        // Renderizado del Panel de Control
         function renderAdminDashboard() {
             renderSubscribersTable();
             renderAdminBookings();
@@ -966,7 +968,7 @@
             }
 
             if(list.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">No hay turnos registrados en la lista.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">No hay turnos agendados.</td></tr>`;
                 return;
             }
 
@@ -1001,6 +1003,31 @@
             });
         }
 
+        function toggleBookingStatus(id) {
+            let list = JSON.parse(localStorage.getItem('ayrton_bookings')) || window.bookings;
+            list = list.map(b => {
+                if(b.id === id) {
+                    b.status = (b.status === 'Confirmado') ? 'Seña Pendiente' : 'Confirmado';
+                }
+                return b;
+            });
+            localStorage.setItem('ayrton_bookings', JSON.stringify(list));
+            window.bookings = list;
+            renderAdminDashboard();
+            showToast("Estado actualizado.");
+        }
+
+        function deleteBooking(id) {
+            if(confirm("¿Seguro deseas eliminar este turno?")) {
+                let list = JSON.parse(localStorage.getItem('ayrton_bookings')) || window.bookings;
+                list = list.filter(b => b.id !== id);
+                localStorage.setItem('ayrton_bookings', JSON.stringify(list));
+                window.bookings = list;
+                renderAdminDashboard();
+                showToast("Turno eliminado.");
+            }
+        }
+
         function updateMetrics() {
             const subs = window.subscribers || [];
             const bks = window.bookings || [];
@@ -1020,7 +1047,18 @@
             if(pendingDepEl) pendingDepEl.innerText = pendingDep;
         }
 
-        // Utilidad Toast
+        // Utilidades Auxiliares
+        function copyAlias() {
+            const alias = "ayrton.2004.mp";
+            const tempInput = document.createElement("input");
+            tempInput.value = alias;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand("copy");
+            document.body.removeChild(tempInput);
+            showToast("Alias copiado: ayrton.2004.mp");
+        }
+
         function showToast(msg) {
             const toast = document.getElementById('toast');
             const toastText = document.getElementById('toast-text');
@@ -1030,6 +1068,45 @@
             setTimeout(() => {
                 toast.classList.add('translate-y-32', 'opacity-0', 'pointer-events-none');
             }, 3000);
+        }
+
+        function quickSelectService(val) {
+            const select = document.getElementById('service-select');
+            if(select) {
+                select.value = val;
+                calculateDeposit();
+            }
+            const turnosSection = document.getElementById('turnos');
+            if(turnosSection) turnosSection.scrollIntoView({behavior: 'smooth'});
+        }
+
+        function calculateDeposit() {
+            const select = document.getElementById('service-select');
+            const totalDisplay = document.getElementById('total-price-display');
+            const depositDisplay = document.getElementById('deposit-price-display');
+            if(!select || !totalDisplay || !depositDisplay) return;
+
+            const type = select.value;
+
+            if(type === 'socio') {
+                totalDisplay.innerText = "$0 ARS (Suscrito VIP)";
+                depositDisplay.innerText = "$0 ARS";
+            } else if(type === 'combo_corte_barba') {
+                totalDisplay.innerText = "$13.000 ARS";
+                depositDisplay.innerText = "$0 ARS (Se paga en la barbería)";
+            } else if(type === 'individual') {
+                totalDisplay.innerText = "$10.000 ARS";
+                depositDisplay.innerText = "$0 ARS (Se paga en la barbería)";
+            } else if(type === 'barba') {
+                totalDisplay.innerText = "$3.000 ARS";
+                depositDisplay.innerText = "$0 ARS (Se paga en la barbería)";
+            } else if(type === 'mechas') {
+                totalDisplay.innerText = "$40.000 ARS";
+                depositDisplay.innerText = "$20.000 ARS (Seña del 50%)";
+            } else if(type === 'tintura_global') {
+                totalDisplay.innerText = "$50.000 ARS";
+                depositDisplay.innerText = "$25.000 ARS (Seña del 50%)";
+            }
         }
     </script>
 </body>
