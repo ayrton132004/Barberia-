@@ -739,19 +739,57 @@
         window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
         window.adminLoggedIn = false;
 
-        const SERVER_KEY = "ayrton_barber_remote_v1";
-
-        // Obtener turnos globales al abrir la app o cargar el panel
-        async function fetchRemoteBookings() {
-            try {
-                const response = await fetch(`https://api.counterapi.dev/v1/barberia_ayrton/reservas/up`);
-                // Petición auxiliar para sincronización de red
-            } catch(e) {}
+        // Autenticación de Dueño Ultrarrápida e Instantánea
+        function loginAdmin() {
+            const passInput = document.getElementById('admin-pass');
+            if(!passInput) return;
+            const pass = passInput.value.trim();
             
-            // Cargar de memoria global compartida de URL / Mensaje
-            const local = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
-            window.bookings = local;
-            return local;
+            if (pass === 'Ap.46296535') {
+                window.adminLoggedIn = true;
+                document.getElementById('admin-auth-card').classList.add('hidden');
+                document.getElementById('admin-dashboard').classList.remove('hidden');
+                
+                // Mostrar panel de inmediato y cargar datos en segundo plano
+                syncGlobalData();
+                showToast("¡Bienvenido Ayrton!");
+            } else {
+                alert("Contraseña incorrecta.");
+            }
+        }
+
+        function logoutAdmin() {
+            window.adminLoggedIn = false;
+            document.getElementById('admin-dashboard').classList.add('hidden');
+            document.getElementById('admin-auth-card').classList.remove('hidden');
+            const passInput = document.getElementById('admin-pass');
+            if(passInput) passInput.value = '';
+            showToast("Sesión cerrada correctamente.");
+        }
+
+        function toggleAdminView() {
+            const clientView = document.getElementById('view-client');
+            const adminView = document.getElementById('view-admin');
+            const adminLabel = document.getElementById('admin-btn-label');
+
+            if (adminView.classList.contains('hidden')) {
+                clientView.classList.add('hidden');
+                adminView.classList.remove('hidden');
+                adminLabel.innerText = "VOLVER A CLIENTES";
+                
+                if (window.adminLoggedIn) {
+                    document.getElementById('admin-auth-card').classList.add('hidden');
+                    document.getElementById('admin-dashboard').classList.remove('hidden');
+                    renderAdminDashboard();
+                } else {
+                    document.getElementById('admin-auth-card').classList.remove('hidden');
+                    document.getElementById('admin-dashboard').classList.add('hidden');
+                }
+            } else {
+                adminView.classList.add('hidden');
+                clientView.classList.remove('hidden');
+                adminLabel.innerText = "PANEL DUEÑO";
+            }
         }
 
         // Cargar parámetros de URL si el cliente viene con un turno agendado en la URL
@@ -914,20 +952,17 @@
         }
 
         async function syncGlobalData() {
-            showToast("Buscando reservas en el servidor...");
-            
-            // Intento de recarga remota
+            // Intento de recarga remota suave (sin congelar interfaz)
             try {
                 const res = await fetch('https://api.restful-api.dev/objects');
                 if(res.ok) {
                     const data = await res.json();
                     const remoteItems = data
-                        .filter(item => item.name === "Turno_Barberia_Ayrton" && item.data)
+                        .filter(item => item && item.name === "Turno_Barberia_Ayrton" && item.data)
                         .map(item => item.data);
                     
                     let local = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
                     
-                    // Fusionar reservas remotas sin duplicar
                     remoteItems.forEach(rb => {
                         if(rb && rb.id && !local.some(lb => lb.id === rb.id)) {
                             local.unshift(rb);
@@ -939,7 +974,7 @@
                 }
             } catch(e) {}
 
-            // Cargar de memoria
+            // Cargar de memoria local
             window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || window.bookings || [];
             window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || window.subscribers || [];
             
@@ -951,7 +986,6 @@
             if(filterServiceEl) filterServiceEl.value = 'all';
 
             renderAdminDashboard();
-            showToast("¡Agenda de turnos sincronizada!");
         }
 
         // Renderizado del Panel de Dueño
