@@ -546,6 +546,10 @@
                             <i class="fa-solid fa-rotate text-sm"></i> 
                             <span>Cargar Reservas Nuevas</span>
                         </button>
+                        <button onclick="importBookingsPrompt()" class="bg-brand-teal text-slate-950 hover:bg-teal-400 font-black px-3 py-2.5 rounded-xl text-xs transition shadow-lg flex items-center space-x-1">
+                            <i class="fa-solid fa-file-import"></i>
+                            <span>Importar</span>
+                        </button>
                         <button onclick="logoutAdmin()" class="bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-300 font-bold px-4 py-2 rounded-xl text-xs transition border border-slate-700">
                             <i class="fa-solid fa-right-from-bracket mr-1.5"></i> Salir del Panel
                         </button>
@@ -735,6 +739,27 @@
         window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
         window.adminLoggedIn = false;
 
+        // Cargar parámetros de URL si el cliente viene con un turno agendado en la URL
+        window.addEventListener('load', () => {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('bk_name')) {
+                const newB = {
+                    id: Date.now(),
+                    name: params.get('bk_name'),
+                    phone: params.get('bk_phone'),
+                    service: params.get('bk_service'),
+                    date: params.get('bk_date'),
+                    time: params.get('bk_time'),
+                    status: params.get('bk_service') === 'socio' ? 'Confirmado' : 'Seña Pendiente',
+                    totalPrice: params.get('bk_price') || 'A confirmar'
+                };
+                if (!window.bookings.some(b => b.name === newB.name && b.time === newB.time && b.date === newB.date)) {
+                    window.bookings.unshift(newB);
+                    localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
+                }
+            }
+        });
+
         // Guardar reserva localmente
         window.saveBookingToCloud = async function(bookingData) {
             if (!window.bookings) window.bookings = [];
@@ -813,143 +838,31 @@
         }
 
         function syncGlobalData() {
+            window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || window.bookings || [];
+            window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || window.subscribers || [];
+            
+            // Limpiar filtro de fecha para mostrar todas las reservas
+            const filterDateEl = document.getElementById('filter-date');
+            if(filterDateEl) filterDateEl.value = '';
+            
             renderAdminDashboard();
-            showToast("Servidor actualizado en tiempo real.");
+            showToast("Reservas actualizadas en tu pantalla.");
         }
 
-        // RENDERIZADO DEL DASHBOARD Y MÉTRICAS
-        function renderAdminDashboard() {
-            renderMetrics();
-            renderAdminSubscribers();
-            renderAdminBookings();
-        }
-
-        function renderMetrics() {
-            const subscribers = window.subscribers || [];
-            const bookings = window.bookings || [];
-            const activeVip = subscribers.filter(s => s.status === 'Activo').length;
-            const vipRevenue = activeVip * 35000;
-            const pendingDeposits = bookings.filter(b => b.status === 'Seña Pendiente').length;
-
-            document.getElementById('metric-vip-count').innerText = activeVip;
-            document.getElementById('metric-vip-revenue').innerText = `$${vipRevenue.toLocaleString('es-AR')}`;
-            document.getElementById('metric-bookings-count').innerText = bookings.length;
-            document.getElementById('metric-pending-deposits').innerText = pendingDeposits;
-        }
-
-        function renderAdminSubscribers() {
-            const tbody = document.getElementById('subscribers-table-body');
-            if(!tbody) return;
-            tbody.innerHTML = '';
-            const subscribers = window.subscribers || [];
-
-            subscribers.forEach(sub => {
-                const tr = document.createElement('tr');
-                tr.className = "hover:bg-slate-800/40 transition";
-                tr.innerHTML = `
-                    <td class="p-3.5 font-bold text-white">${sub.name}</td>
-                    <td class="p-3.5 text-slate-300">
-                        <a href="https://wa.me/549${sub.phone.replace(/[^0-9]/g,'')}" target="_blank" class="hover:text-emerald-400">
-                            <i class="fa-brands fa-whatsapp text-emerald-400 mr-1"></i>${sub.phone}
-                        </a>
-                    </td>
-                    <td class="p-3.5 text-slate-400">${sub.startDate}</td>
-                    <td class="p-3.5">
-                        <span class="font-black ${sub.cutsUsed >= 4 ? 'text-rose-400' : 'text-brand-orange'}">${sub.cutsUsed} / 4</span>
-                        <div class="w-24 bg-slate-950 rounded-full h-1.5 mt-1 border border-slate-800">
-                            <div class="bg-brand-orange h-1.5 rounded-full" style="width: ${(sub.cutsUsed / 4) * 100}%"></div>
-                        </div>
-                    </td>
-                    <td class="p-3.5">
-                        <span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${sub.status === 'Activo' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'}">
-                            ${sub.status}
-                        </span>
-                    </td>
-                    <td class="p-3.5 text-right space-x-1">
-                        <button onclick="addCutToSub('${sub.id}')" ${sub.cutsUsed >= 4 ? 'disabled' : ''} class="bg-brand-orange/20 hover:bg-brand-orange text-brand-orange hover:text-slate-950 font-bold px-2.5 py-1 rounded-lg text-[11px] transition disabled:opacity-30">
-                            +1 Corte
-                        </button>
-                        <button onclick="resetSubCuts('${sub.id}')" title="Renovar Mes" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-2.5 py-1 rounded-lg text-[11px] transition">
-                            Renovar
-                        </button>
-                        <button onclick="deleteSub('${sub.id}')" class="text-slate-500 hover:text-rose-400 px-1.5 py-1 text-sm">
-                            <i class="fa-solid fa-trash"></i>
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
-
-        function renderAdminBookings() {
-            const tbody = document.getElementById('bookings-table-body');
-            if(!tbody) return;
-            const dateFilter = document.getElementById('filter-date').value;
-            const serviceFilter = document.getElementById('filter-service').value;
-
-            tbody.innerHTML = '';
-            const bookings = window.bookings || [];
-
-            let filtered = bookings.filter(b => {
-                let matchDate = !dateFilter || b.date === dateFilter;
-                let matchService = serviceFilter === 'all' || b.service === serviceFilter;
-                return matchDate && matchService;
-            });
-
-            if(filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">No hay reservas registradas para esta fecha/servicio</td></tr>`;
-                return;
-            }
-
-            filtered.forEach(b => {
-                const tr = document.createElement('tr');
-                tr.className = "hover:bg-slate-800/40 transition";
-                
-                let serviceBadge = b.service;
-                if(b.service === 'socio') serviceBadge = "Suscripción VIP";
-                if(b.service === 'combo_corte_barba') serviceBadge = "Combo Corte + Barba";
-                if(b.service === 'individual') serviceBadge = "Corte Individual";
-                if(b.service === 'barba') serviceBadge = "Barba / Perfilado";
-                if(b.service === 'tintura_global') serviceBadge = "Tintura Global";
-                if(b.service === 'mechas') serviceBadge = "Mechas";
-
-                tr.innerHTML = `
-                    <td class="p-3.5 font-bold text-white">${b.date} <span class="text-brand-orange ml-1">${b.time}</span></td>
-                    <td class="p-3.5">
-                        <span class="font-bold text-slate-200 block">${b.name}</span>
-                        <a href="https://wa.me/549${b.phone.replace(/[^0-9]/g,'')}" target="_blank" class="text-[11px] text-emerald-400 hover:underline">
-                            ${b.phone}
-                        </a>
-                    </td>
-                    <td class="p-3.5 text-slate-300 font-semibold">${serviceBadge}</td>
-                    <td class="p-3.5 text-slate-400">${b.totalPrice}</td>
-                    <td class="p-3.5">
-                        <span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${b.status === 'Confirmado' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'}">
-                            ${b.status}
-                        </span>
-                    </td>
-                    <td class="p-3.5 text-right space-x-1">
-                        <button onclick="toggleBookingStatus('${b.id}')" class="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white font-bold px-2.5 py-1 rounded-lg text-[11px] transition">
-                            ${b.status === 'Confirmado' ? 'Marcar Pendiente' : 'Confirmar Seña'}
-                        </button>
-                        <button onclick="deleteBooking('${b.id}')" class="text-slate-500 hover:text-rose-400 px-1.5 py-1 text-sm">
-                            <i class="fa-solid fa-trash"></i>
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
-
-        // ACCIONES ADMIN CON CONEXIÓN CLOUD
-        function addCutToSub(id) {
-            const sub = (window.subscribers || []).find(s => String(s.id) === String(id));
-            if(sub && sub.cutsUsed < 4) {
-                const newCount = sub.cutsUsed + 1;
-                if (window.updateSubscriberInCloud) {
-                    window.updateSubscriberInCloud(id, { cutsUsed: newCount });
+        function importBookingsPrompt() {
+            const raw = prompt("Pega aquí el código de turno enviado por WhatsApp:");
+            if(raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    if(parsed && parsed.name) {
+                        window.bookings.unshift(parsed);
+                        localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
+                        renderAdminDashboard();
+                        showToast("Turno importado con éxito.");
+                    }
+                } catch(e) {
+                    showToast("Formato de código inválido.");
                 }
-                showToast(`Corte registrado para ${sub.name} (${newCount}/4)`);
             }
         }
 
@@ -1146,16 +1059,14 @@
                 totalPrice: totalPrice
             };
 
-            // Guardar datos
+            // Guardar datos en local y armar código de respaldo
             if (!window.bookings) window.bookings = [];
             window.bookings.unshift(newBooking);
             localStorage.setItem('ayrton_bookings', JSON.stringify(window.bookings));
 
-            const msgText = `Hola Ayrton! Quisiera reservar un turno:\n- Nombre: ${name}\n- Servicio: ${serviceName}\n- Fecha: ${date}\n- Hora: ${time}\n- Estado de pago: ${depositText}\n- Mi Teléfono: ${phone}`;
+            const bookingCode = JSON.stringify(newBooking);
+            const msgText = `Hola Ayrton! Quisiera reservar un turno:\n- Nombre: ${name}\n- Servicio: ${serviceName}\n- Fecha: ${date}\n- Hora: ${time}\n- Estado de pago: ${depositText}\n- Mi Teléfono: ${phone}\n\n[Código Turno: ${bookingCode}]`;
             const waUrl = `https://api.whatsapp.com/send?phone=5493425913679&text=${encodeURIComponent(msgText)}`;
-
-            // Pequeña pausa asegurando la escritura de datos
-            await new Promise(resolve => setTimeout(resolve, 800));
 
             btn.disabled = false;
             btnText.innerText = "CONFIRMAR Y ENVIAR RESERVA POR WHATSAPP";
@@ -1171,10 +1082,9 @@
 
             showToast("¡Reserva guardada! Redirigiendo a WhatsApp...");
             
-            // Redirección a WhatsApp tras la confirmación de guardado
             setTimeout(() => {
                 window.location.href = waUrl;
-            }, 500);
+            }, 600);
         }
 
         function resetBookingForm() {
@@ -1195,4 +1105,4 @@
         });
     </script>
 </body>
-                        </html>
+    </html>
