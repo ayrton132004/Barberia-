@@ -734,12 +734,12 @@
 
     <!-- Script de Gestión de Turnos y Almacenamiento Ultra Rápido -->
     <script>
-        // App State & Sincronización Global por Servidor Web
+        // App State
         window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || [];
         window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
         window.adminLoggedIn = false;
 
-        // Autenticación de Dueño Ultrarrápida e Instantánea
+        // Autenticación de Dueño Instantánea (Sin bloqueos de red)
         function loginAdmin() {
             const passInput = document.getElementById('admin-pass');
             if(!passInput) return;
@@ -750,8 +750,8 @@
                 document.getElementById('admin-auth-card').classList.add('hidden');
                 document.getElementById('admin-dashboard').classList.remove('hidden');
                 
-                // Mostrar panel de inmediato y cargar datos en segundo plano
-                syncGlobalData();
+                // Mostrar datos guardados
+                renderAdminDashboard();
                 showToast("¡Bienvenido Ayrton!");
             } else {
                 alert("Contraseña incorrecta.");
@@ -792,34 +792,11 @@
             }
         }
 
-        // Cargar parámetros de URL si el cliente viene con un turno agendado en la URL
-        window.addEventListener('load', () => {
-            const params = new URLSearchParams(window.location.search);
-            if (params.has('bk_name')) {
-                const newB = {
-                    id: Date.now(),
-                    name: params.get('bk_name'),
-                    phone: params.get('bk_phone'),
-                    service: params.get('bk_service'),
-                    date: params.get('bk_date'),
-                    time: params.get('bk_time'),
-                    status: params.get('bk_service') === 'socio' ? 'Confirmado' : 'Seña Pendiente',
-                    totalPrice: params.get('bk_price') || 'A confirmar'
-                };
-                let list = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
-                if (!list.some(b => b.name === newB.name && b.time === newB.time && b.date === newB.date)) {
-                    list.unshift(newB);
-                    localStorage.setItem('ayrton_bookings', JSON.stringify(list));
-                    window.bookings = list;
-                }
-            }
-        });
-
         function syncGlobalData() {
             window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || window.bookings || [];
             window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || window.subscribers || [];
             
-            // Limpiar filtro de fecha para mostrar absolutamente todas las reservas pasadas y futuras
+            // Limpiar filtros para mostrar todo
             const filterDateEl = document.getElementById('filter-date');
             if(filterDateEl) filterDateEl.value = '';
             
@@ -827,11 +804,11 @@
             if(filterServiceEl) filterServiceEl.value = 'all';
 
             renderAdminDashboard();
-            showToast("Lista de reservas sincronizada.");
+            showToast("Lista actualizada.");
         }
 
         function importBookingsPrompt() {
-            const raw = prompt("Pega aquí el mensaje de WhatsApp o el [Código Turno] enviado por tu cliente:");
+            const raw = prompt("Pega aquí el mensaje de WhatsApp enviado por tu cliente:");
             if(raw) {
                 try {
                     let codeText = raw;
@@ -846,7 +823,7 @@
                             localStorage.setItem('ayrton_bookings', JSON.stringify(list));
                             window.bookings = list;
                             renderAdminDashboard();
-                            showToast("¡Turno agregado con éxito al panel!");
+                            showToast("¡Turno cargado con éxito en el panel!");
                         } else {
                             showToast("Este turno ya figuraba en la agenda.");
                         }
@@ -857,14 +834,9 @@
             }
         }
 
-        async function submitBooking(e) {
+        function submitBooking(e) {
             e.preventDefault();
             
-            const btn = document.getElementById('submit-booking-btn');
-            const btnText = document.getElementById('submit-btn-text');
-            btn.disabled = true;
-            btnText.innerText = "GUARDANDO Y ABRRIENDO WHATSAPP...";
-
             const name = document.getElementById('client-name').value.trim();
             const phone = document.getElementById('client-phone').value.trim();
             const type = document.getElementById('service-select').value;
@@ -873,8 +845,6 @@
 
             if(!name || !phone || !date || !time) {
                 alert("Por favor completa todos los campos requeridos.");
-                btn.disabled = false;
-                btnText.innerText = "CONFIRMAR Y ENVIAR RESERVA POR WHATSAPP";
                 return;
             }
 
@@ -919,7 +889,7 @@
                 totalPrice: totalPrice
             };
 
-            // Guardado local en el celular del cliente
+            // Guardado local
             try {
                 let currentBookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
                 currentBookings.unshift(newBooking);
@@ -927,65 +897,13 @@
                 window.bookings = currentBookings;
             } catch(err) {}
 
-            // Intento de envío a servidor global en la nube (Sincronización remota)
-            try {
-                fetch('https://api.restful-api.dev/objects', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: "Turno_Barberia_Ayrton",
-                        data: newBooking
-                    })
-                }).catch(() => {});
-            } catch(err) {}
-
-            // Crear el mensaje con código estructurado para importar fácil
+            // Crear mensaje para WhatsApp con código estructurado
             const bookingCode = JSON.stringify(newBooking);
             const msgText = `Hola Ayrton! Quisiera reservar un turno:\n- Nombre: ${name}\n- Servicio: ${serviceName}\n- Fecha: ${date}\n- Hora: ${time}\n- Estado de pago: ${depositText}\n- Mi Teléfono: ${phone}\n\n[Código Turno: ${bookingCode}]`;
             const waUrl = `https://api.whatsapp.com/send?phone=5493425913679&text=${encodeURIComponent(msgText)}`;
 
-            btn.disabled = false;
-            btnText.innerText = "CONFIRMAR Y ENVIAR RESERVA POR WHATSAPP";
-
-            // Redirección garantizada e inmediata a WhatsApp
+            // Abrir WhatsApp de inmediato
             window.location.href = waUrl;
-        }
-
-        async function syncGlobalData() {
-            // Intento de recarga remota suave (sin congelar interfaz)
-            try {
-                const res = await fetch('https://api.restful-api.dev/objects');
-                if(res.ok) {
-                    const data = await res.json();
-                    const remoteItems = data
-                        .filter(item => item && item.name === "Turno_Barberia_Ayrton" && item.data)
-                        .map(item => item.data);
-                    
-                    let local = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
-                    
-                    remoteItems.forEach(rb => {
-                        if(rb && rb.id && !local.some(lb => lb.id === rb.id)) {
-                            local.unshift(rb);
-                        }
-                    });
-
-                    localStorage.setItem('ayrton_bookings', JSON.stringify(local));
-                    window.bookings = local;
-                }
-            } catch(e) {}
-
-            // Cargar de memoria local
-            window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || window.bookings || [];
-            window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || window.subscribers || [];
-            
-            // Limpiar filtros para ver todo
-            const filterDateEl = document.getElementById('filter-date');
-            if(filterDateEl) filterDateEl.value = '';
-            
-            const filterServiceEl = document.getElementById('filter-service');
-            if(filterServiceEl) filterServiceEl.value = 'all';
-
-            renderAdminDashboard();
         }
 
         // Renderizado del Panel de Dueño
@@ -1100,6 +1018,18 @@
             if(vipRevEl) vipRevEl.innerText = `$${vipRev.toLocaleString('es-AR')}`;
             if(bksCountEl) bksCountEl.innerText = bks.length;
             if(pendingDepEl) pendingDepEl.innerText = pendingDep;
+        }
+
+        // Utilidad Toast
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            const toastText = document.getElementById('toast-text');
+            if(!toast || !toastText) return;
+            toastText.innerText = msg;
+            toast.classList.remove('translate-y-32', 'opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('translate-y-32', 'opacity-0', 'pointer-events-none');
+            }, 3000);
         }
     </script>
 </body>
