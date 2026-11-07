@@ -14,20 +14,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Barberia Ayrton">
-    <!-- Inline Service Worker Registration for Full Screen PWA -->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                const swCode = `
-                    self.addEventListener('install', (e) => self.skipWaiting());
-                    self.addEventListener('activate', (e) => self.clients.claim());
-                    self.addEventListener('fetch', (e) => e.respondWith(fetch(e.request)));
-                `;
-                const blob = new Blob([swCode], { type: 'application/javascript' });
-                navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(() => {});
-            });
-        }
-    </script>
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -82,7 +69,6 @@
     <header class="sticky top-0 z-50 backdrop-blur-md bg-slate-950/85 border-b border-slate-800">
         <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
             <div class="flex items-center space-x-3 cursor-pointer" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
-                <!-- Logo Vectorial Estilizado -->
                 <div class="w-11 h-11 rounded-2xl bg-slate-900 border border-brand-orange/40 flex items-center justify-center p-1 shadow-md">
                     <svg viewBox="0 0 100 100" class="w-full h-full">
                         <path d="M 10 50 C 20 20, 40 20, 50 40 C 60 20, 80 20, 90 50 C 75 60, 50 85, 50 85 C 50 85, 25 60, 10 50 Z" fill="#FF5722"/>
@@ -104,12 +90,12 @@
             <nav class="hidden md:flex items-center space-x-6 text-xs font-bold text-slate-300 uppercase tracking-wider">
                 <a href="#servicios" class="hover:text-brand-orange transition">Servicios</a>
                 <a href="#suscripcion" class="hover:text-brand-orange transition">Plan VIP</a>
+                <a href="#mis-turnos" class="hover:text-brand-orange transition">Mis Turnos</a>
                 <a href="#transferencia" class="hover:text-brand-orange transition">Pago / Transferencia</a>
                 <a href="#turnos" class="hover:text-brand-orange transition">Reservar Turno</a>
             </nav>
 
             <div class="flex items-center space-x-3">
-                <!-- Botón de Acceso Admin para Ayrton -->
                 <button onclick="toggleAdminView()" id="btn-admin-toggle" class="bg-brand-orange/20 border border-brand-orange/40 hover:bg-brand-orange hover:text-slate-950 text-brand-orange px-3.5 py-2 rounded-xl text-xs font-black transition flex items-center space-x-1.5 shadow-md">
                     <i class="fa-solid fa-user-shield"></i>
                     <span id="admin-btn-label">PANEL DUEÑO</span>
@@ -141,7 +127,7 @@
                         </h1>
                         
                         <p class="text-slate-300 text-sm md:text-base max-w-xl font-normal leading-relaxed">
-                            En lugar de pagar <strong class="text-white">$10.000 ARS</strong> por cada visita semanal, suscríbete al Plan Mensual VIP de <strong class="text-brand-orange">BARBERIA AYRTON</strong> y disfruta de 1 corte cada semana ahorrando $5.000 ARS en el mes.
+                            Suscríbete al Plan Mensual VIP de <strong class="text-brand-orange">BARBERIA AYRTON</strong> y disfruta de 1 corte cada semana ahorrando $5.000 ARS en el mes.
                         </p>
 
                         <div class="flex flex-col sm:flex-row items-center gap-3 justify-center md:justify-start pt-2">
@@ -198,7 +184,7 @@
 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     
-                    <!-- 1. Suscripción VIP -->
+                    <!-- 1. Suscripción VIP (4 cortes) -->
                     <div id="suscripcion" class="bg-slate-900 border-2 border-brand-orange rounded-3xl p-6 flex flex-col justify-between glow-orange relative">
                         <span class="absolute -top-3 right-4 bg-brand-orange text-slate-950 font-black text-[10px] px-3 py-1 rounded-full uppercase">MÁS POPULAR</span>
                         <div>
@@ -220,7 +206,29 @@
                         </button>
                     </div>
 
-                    <!-- 2. Combo Corte + Barba -->
+                    <!-- 2. Plan Quincenal (2 cortes por $18.000) -->
+                    <div class="bg-slate-900 border-2 border-emerald-500 rounded-3xl p-6 flex flex-col justify-between relative shadow-xl">
+                        <span class="absolute -top-3 right-4 bg-emerald-500 text-slate-950 font-black text-[10px] px-3 py-1 rounded-full uppercase">OFERTA 2 CORTES</span>
+                        <div>
+                            <div class="flex items-center space-x-2 text-emerald-400 text-xs font-bold mb-2">
+                                <i class="fa-solid fa-scissors"></i>
+                                <span>PLAN QUINCENAL</span>
+                            </div>
+                            <h3 class="text-2xl font-black text-white mb-2">2 CORTES / MES</h3>
+                            <p class="text-slate-400 text-xs mb-4">Ideal para mantener tu corte quincenalmente.</p>
+                            
+                            <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-4">
+                                <span class="text-3xl font-black text-white">$18.000</span>
+                                <span class="text-xs text-slate-400 font-bold"> ARS / mes</span>
+                                <span class="block text-[11px] text-emerald-400 font-semibold mt-1">Ahorras $2.000 ARS ($9.000 por corte)</span>
+                            </div>
+                        </div>
+                        <button onclick="quickSelectService('plan_2cortes')" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black rounded-xl text-xs transition shadow-md">
+                            RESERVAR 2 CORTES ($18.000)
+                        </button>
+                    </div>
+
+                    <!-- 3. Combo Corte + Barba -->
                     <div class="bg-slate-900 border-2 border-brand-yellow/80 rounded-3xl p-6 flex flex-col justify-between relative shadow-xl">
                         <span class="absolute -top-3 right-4 bg-brand-yellow text-slate-950 font-black text-[10px] px-3 py-1 rounded-full uppercase">PROMO COMBO</span>
                         <div>
@@ -234,7 +242,6 @@
                             <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-4">
                                 <span class="text-3xl font-black text-white">$13.000</span>
                                 <span class="text-xs text-slate-400 font-bold"> ARS</span>
-                                <span class="block text-[11px] text-brand-yellow font-semibold mt-1">Combo </span>
                             </div>
                         </div>
                         <button onclick="quickSelectService('combo_corte_barba')" class="w-full py-3 bg-brand-yellow hover:bg-yellow-500 text-slate-950 font-black rounded-xl text-xs transition shadow-md">
@@ -242,7 +249,7 @@
                         </button>
                     </div>
 
-                    <!-- 3. Corte Individual -->
+                    <!-- 4. Corte Individual -->
                     <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between hover:border-slate-700 transition">
                         <div>
                             <div class="flex items-center space-x-2 text-slate-400 text-xs font-bold mb-2">
@@ -255,7 +262,6 @@
                             <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-4">
                                 <span class="text-3xl font-black text-white">$10.000</span>
                                 <span class="text-xs text-slate-400 font-bold"> ARS / corte</span>
-                                <span class="block text-[11px] text-slate-500 mt-1">Sin compromiso mensual</span>
                             </div>
                         </div>
                         <button onclick="quickSelectService('individual')" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs transition">
@@ -263,7 +269,7 @@
                         </button>
                     </div>
 
-                    <!-- 4. Barba / Perfilado -->
+                    <!-- 5. Barba / Perfilado -->
                     <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between hover:border-slate-700 transition">
                         <div>
                             <div class="flex items-center space-x-2 text-slate-400 text-xs font-bold mb-2">
@@ -276,7 +282,6 @@
                             <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-4">
                                 <span class="text-3xl font-black text-white">$3.000</span>
                                 <span class="text-xs text-slate-400 font-bold"> ARS</span>
-                                <span class="block text-[11px] text-slate-500 mt-1">Cuidado detallado facial</span>
                             </div>
                         </div>
                         <button onclick="quickSelectService('barba')" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs transition">
@@ -284,7 +289,7 @@
                         </button>
                     </div>
 
-                    <!-- 5. Mechas / Reflejos -->
+                    <!-- 6. Mechas / Reflejos -->
                     <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between hover:border-brand-teal/60 transition">
                         <div>
                             <div class="flex items-center space-x-2 text-brand-teal text-xs font-bold mb-2">
@@ -299,40 +304,10 @@
                                     <span class="text-slate-400 text-xs">Total: </span>
                                     <span class="text-xl font-black text-white">$40.000 ARS</span>
                                 </div>
-                                <div class="pt-1 border-t border-slate-900 text-brand-teal text-xs font-bold">
-                                    <span>Seña (50%): </span>
-                                    <span>$20.000 ARS</span>
-                                </div>
                             </div>
                         </div>
                         <button onclick="quickSelectService('mechas')" class="w-full py-3 bg-brand-teal hover:bg-teal-600 text-slate-950 font-black rounded-xl text-xs transition shadow-md">
-                            RESERVAR MECHAS (SEÑA $20.000)
-                        </button>
-                    </div>
-
-                    <!-- 6. Tintura Global -->
-                    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between hover:border-brand-orange/60 transition">
-                        <div>
-                            <div class="flex items-center space-x-2 text-brand-orange text-xs font-bold mb-2">
-                                <i class="fa-solid fa-wand-magic-sparkles"></i>
-                                <span>COLOR COMPLETO</span>
-                            </div>
-                            <h3 class="text-xl font-black text-white mb-2">TINTURA GLOBAL</h3>
-                            <p class="text-slate-400 text-xs mb-4">Decoloración o tinte uniforme en todo el cabello.</p>
-                            
-                            <div class="bg-slate-950 p-3 rounded-2xl border border-slate-800 mb-4 space-y-1">
-                                <div>
-                                    <span class="text-slate-400 text-xs">Total: </span>
-                                    <span class="text-xl font-black text-white">$50.000 ARS</span>
-                                </div>
-                                <div class="pt-1 border-t border-slate-900 text-brand-orange text-xs font-bold">
-                                    <span>Seña (50%): </span>
-                                    <span>$25.000 ARS</span>
-                                </div>
-                            </div>
-                        </div>
-                        <button onclick="quickSelectService('tintura_global')" class="w-full py-3 bg-brand-orange hover:bg-orange-600 text-slate-950 font-black rounded-xl text-xs transition shadow-md">
-                            RESERVAR GLOBAL (SEÑA $25.000)
+                            RESERVAR MECHAS
                         </button>
                     </div>
 
@@ -350,7 +325,7 @@
                                 </div>
                                 <div>
                                     <h3 class="text-xl font-black text-white">Datos de Pago & Transferencia</h3>
-                                    <p class="text-xs text-slate-400">Paga tu suscripción o seña directamente vía Mercado Pago o Transferencia Bancaria</p>
+                                    <p class="text-xs text-slate-400">Paga tu suscripción o seña directamente vía Mercado Pago</p>
                                 </div>
                             </div>
 
@@ -361,14 +336,11 @@
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-6">
-                            <!-- Titular -->
                             <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
                                 <span class="text-xs text-slate-400 block font-semibold uppercase">Titular de la Cuenta</span>
                                 <span class="text-white font-black text-lg">AYRTON DYLAN PAIVA</span>
-                                <span class="block text-[11px] text-slate-500 mt-0.5">Mercado Pago / CVU Directo</span>
                             </div>
 
-                            <!-- Alias con botón de copiado -->
                             <div class="bg-slate-950 p-4 rounded-2xl border border-brand-orange/40 flex items-center justify-between">
                                 <div>
                                     <span class="text-xs text-brand-orange block font-semibold uppercase">Alias Mercado Pago</span>
@@ -376,24 +348,9 @@
                                 </div>
                                 <button onclick="copyAlias()" class="bg-brand-orange hover:bg-orange-600 text-slate-950 font-black px-4 py-2 rounded-xl text-xs transition shadow-md flex items-center space-x-1.5">
                                     <i class="fa-solid fa-copy"></i>
-                                    <span id="btn-copy-text">COPIAR</span>
+                                    <span>COPIAR</span>
                                 </button>
                             </div>
-                        </div>
-
-                        <!-- Contacto por Teléfono/WhatsApp -->
-                        <div class="mt-6 bg-slate-950/80 p-4 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
-                            <div class="flex items-center space-x-3">
-                                <i class="fa-solid fa-phone text-brand-orange text-lg"></i>
-                                <div>
-                                    <span class="text-xs text-slate-400 block">Atención & Envio de Comprobantes:</span>
-                                    <span class="text-white font-bold text-sm">342 591-3679</span>
-                                </div>
-                            </div>
-                            <a href="https://wa.me/5493425913679?text=Hola%20Ayrton!%20Te%20env%C3%ADo%20mi%20comprobante%20de%20pago" target="_blank" rel="noopener noreferrer" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition text-center flex items-center justify-center space-x-2">
-                                <i class="fa-brands fa-whatsapp"></i>
-                                <span>ENVIAR COMPROBANTE</span>
-                            </a>
                         </div>
                     </div>
                 </div>
@@ -427,85 +384,52 @@
                                 <label class="block text-xs font-bold uppercase text-slate-300 mb-2">Servicio Requerido</label>
                                 <select id="service-select" onchange="calculateDeposit()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-brand-orange transition">
                                     <option value="socio">Corte Suscrito VIP ($0 Extra)</option>
+                                    <option value="plan_2cortes">Plan 2 Cortes al Mes ($18.000 ARS)</option>
                                     <option value="combo_corte_barba">Promo Corte + Barba ($13.000 ARS)</option>
                                     <option value="individual">Corte Individual ($10.000 ARS)</option>
                                     <option value="barba">Barba / Perfilado ($3.000 ARS)</option>
-                                    <option value="mechas">Mechas ($40.000 - Seña $20.000)</option>
-                                    <option value="tintura_global">Tintura Global ($50.000 - Seña $25.000)</option>
+                                    <option value="mechas">Mechas ($40.000)</option>
+                                    <option value="tintura_global">Tintura Global ($50.000)</option>
                                 </select>
                             </div>
 
                             <div>
                                 <label class="block text-xs font-bold uppercase text-slate-300 mb-2">Fecha</label>
-                                <input type="date" id="booking-date" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-brand-orange transition">
+                                <input type="date" id="booking-date" required onchange="updateAvailableTimeSlots()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-brand-orange transition">
                             </div>
 
                             <div>
                                 <label class="block text-xs font-bold uppercase text-slate-300 mb-2">Horario</label>
                                 <select id="booking-time" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-brand-orange transition">
-                                    <option value="">Seleccionar hora</option>
-                                    <optgroup label="Mañana (10:00 - 12:00 hs)">
-                                        <option value="10:00 hs">10:00 hs</option>
-                                        <option value="10:30 hs">10:30 hs</option>
-                                        <option value="11:00 hs">11:00 hs</option>
-                                        <option value="11:30 hs">11:30 hs</option>
-                                        <option value="12:00 hs">12:00 hs</option>
-                                    </optgroup>
-                                    <optgroup label="Tarde (15:00 - 20:00 hs)">
-                                        <option value="15:00 hs">15:00 hs</option>
-                                        <option value="15:30 hs">15:30 hs</option>
-                                        <option value="16:00 hs">16:00 hs</option>
-                                        <option value="16:30 hs">16:30 hs</option>
-                                        <option value="17:00 hs">17:00 hs</option>
-                                        <option value="17:30 hs">17:30 hs</option>
-                                        <option value="18:00 hs">18:00 hs</option>
-                                        <option value="18:30 hs">18:30 hs</option>
-                                        <option value="19:00 hs">19:00 hs</option>
-                                        <option value="19:30 hs">19:30 hs</option>
-                                        <option value="20:00 hs">20:00 hs</option>
-                                    </optgroup>
+                                    <option value="">Selecciona primero la fecha</option>
                                 </select>
                             </div>
                         </div>
 
-                        <!-- Resumen del Pago / Seña -->
-                        <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
-                            <div class="flex justify-between items-center text-xs text-slate-300">
-                                <span>Valor total del servicio:</span>
-                                <span id="total-price-display" class="font-bold text-white">$0 ARS</span>
-                            </div>
-                            <div class="flex justify-between items-center text-sm font-bold text-brand-orange pt-2 border-t border-slate-900">
-                                <span>Monto a congelar/señarel 50%:</span>
-                                <span id="deposit-price-display" class="text-base">$0 ARS</span>
-                            </div>
-                            <p id="deposit-note" class="text-[11px] text-slate-400 pt-1">
-                                Transfiere al Alias <strong>ayrton.2004.mp</strong> y envía el comprobante.
-                            </p>
-                        </div>
-
                         <button type="submit" id="submit-booking-btn" class="w-full bg-gradient-to-r from-brand-orange to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-slate-950 font-black py-4 rounded-xl text-base shadow-lg transition flex items-center justify-center space-x-2">
                             <i class="fa-solid fa-paper-plane"></i>
-                            <span id="submit-btn-text">CONFIRMAR Y ENVIAR RESERVA POR WHATSAPP</span>
+                            <span>CONFIRMAR Y ENVIAR RESERVA POR WHATSAPP</span>
                         </button>
                     </form>
+                </div>
+            </section>
 
-                    <!-- Confirmación -->
-                    <div id="booking-success" class="hidden mt-6 p-6 bg-slate-950 border border-emerald-500/40 rounded-2xl text-center space-y-4">
-                        <div class="w-12 h-12 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto text-2xl">
-                            <i class="fa-solid fa-check"></i>
+            <!-- Sección Mi Control de Turnos (Cliente) -->
+            <section id="mis-turnos" class="py-12 bg-slate-900/40 border-t border-slate-800">
+                <div class="max-w-4xl mx-auto px-4">
+                    <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
+                        <div>
+                            <span class="text-brand-orange text-xs font-bold uppercase tracking-widest">Panel del Cliente</span>
+                            <h3 class="text-2xl font-black text-white">MIS TURNOS RESERVADOS</h3>
                         </div>
-                        <h4 class="text-lg font-bold text-white">¡Turno Generado!</h4>
-                        <p id="success-message" class="text-xs text-slate-300 leading-relaxed"></p>
-                        
-                        <div class="flex flex-col sm:flex-row justify-center gap-3">
-                            <a id="wa-redirect-btn" href="#" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-6 py-3 rounded-xl text-xs transition shadow-lg">
-                                <i class="fa-brands fa-whatsapp text-base"></i>
-                                <span>ABRIR WHATSAPP PARA MANDAR DATOS</span>
-                            </a>
-                            <button onclick="resetBookingForm()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-5 py-3 rounded-xl text-xs transition">
-                                Agendar otro turno
-                            </button>
-                        </div>
+                        <button onclick="renderClientTurnos()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-xl text-xs font-bold flex items-center space-x-2">
+                            <i class="fa-solid fa-rotate text-brand-orange"></i>
+                            <span>ACTUALIZAR MIS TURNOS</span>
+                        </button>
+                    </div>
+
+                    <div id="client-turnos-container" class="space-y-4">
+                        <!-- Turnos del cliente renderizados dinámicamente -->
                     </div>
                 </div>
             </section>
@@ -522,7 +446,7 @@
                     <i class="fa-solid fa-lock"></i>
                 </div>
                 <h3 class="text-2xl font-black text-white">ACCESO EXCLUSIVO AYRTON</h3>
-                <p class="text-slate-400 text-xs mt-1 mb-6">Ingresa tu clave de dueño para administrar turnos y caja de suscripciones VIP.</p>
+                <p class="text-slate-400 text-xs mt-1 mb-6">Ingresa tu clave de dueño para administrar turnos.</p>
                 
                 <div class="space-y-4">
                     <input type="password" id="admin-pass" placeholder="Ingresa contraseña" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-center text-white text-sm focus:outline-none focus:border-brand-orange">
@@ -534,136 +458,25 @@
 
             <!-- Dashboard Principal (Visible tras Login) -->
             <div id="admin-dashboard" class="hidden space-y-8">
-                
-                <!-- Header Admin -->
                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-6 rounded-3xl">
                     <div>
                         <span class="text-brand-orange font-bold text-xs uppercase tracking-widest">Barbería Ayrton • Panel Control</span>
-                        <h2 class="text-2xl font-black text-white">GESTIÓN DE SUSCRIPCIONES Y RESERVAS</h2>
+                        <h2 class="text-2xl font-black text-white">GESTIÓN DE RESERVAS</h2>
                     </div>
                     <div class="flex items-center space-x-3">
-                        <button onclick="syncGlobalData()" class="bg-brand-orange text-slate-950 hover:bg-orange-600 font-black px-4 py-2.5 rounded-xl text-xs transition shadow-lg flex items-center space-x-2">
-                            <i class="fa-solid fa-rotate text-sm"></i> 
-                            <span>Cargar Reservas Nuevas</span>
-                        </button>
-                        <button onclick="importBookingsPrompt()" class="bg-brand-teal text-slate-950 hover:bg-teal-400 font-black px-3 py-2.5 rounded-xl text-xs transition shadow-lg flex items-center space-x-1">
+                        <button onclick="importBookingsPrompt()" class="bg-brand-teal text-slate-950 hover:bg-teal-400 font-black px-4 py-2.5 rounded-xl text-xs transition shadow-lg flex items-center space-x-2">
                             <i class="fa-solid fa-file-import"></i>
                             <span>Importar desde WhatsApp</span>
                         </button>
-                        <button onclick="logoutAdmin()" class="bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-300 font-bold px-4 py-2 rounded-xl text-xs transition border border-slate-700">
-                            <i class="fa-solid fa-right-from-bracket mr-1.5"></i> Salir del Panel
+                        <button onclick="logoutAdmin()" class="bg-slate-800 hover:bg-rose-900/60 text-slate-300 font-bold px-4 py-2 rounded-xl text-xs transition border border-slate-700">
+                            Salir
                         </button>
                     </div>
                 </div>
 
-                <!-- Métricas Rápidas -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between">
-                        <div>
-                            <span class="text-xs text-slate-400 font-semibold block">Clientes VIP Activos</span>
-                            <span id="metric-vip-count" class="text-3xl font-black text-brand-orange">0</span>
-                            <span class="text-[11px] text-brand-orange/80 font-semibold block mt-1">Suscripción Mensual</span>
-                        </div>
-                        <div class="w-12 h-12 bg-brand-orange/10 text-brand-orange rounded-xl flex items-center justify-center text-xl">
-                            <i class="fa-solid fa-crown"></i>
-                        </div>
-                    </div>
-
-                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between">
-                        <div>
-                            <span class="text-xs text-slate-400 font-semibold block">Caja Mensual VIP</span>
-                            <span id="metric-vip-revenue" class="text-3xl font-black text-emerald-400">$0</span>
-                            <span class="text-[11px] text-slate-400 font-semibold block mt-1">Suscripciones cobradas</span>
-                        </div>
-                        <div class="w-12 h-12 bg-emerald-500/10 text-emerald-400 rounded-xl flex items-center justify-center text-xl">
-                            <i class="fa-solid fa-sack-dollar"></i>
-                        </div>
-                    </div>
-
-                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between">
-                        <div>
-                            <span class="text-xs text-slate-400 font-semibold block">Turnos Agendados</span>
-                            <span id="metric-bookings-count" class="text-3xl font-black text-white">0</span>
-                            <span class="text-[11px] text-brand-yellow font-bold block mt-1">En agenda global</span>
-                        </div>
-                        <div class="w-12 h-12 bg-brand-yellow/10 text-brand-yellow rounded-xl flex items-center justify-center text-xl">
-                            <i class="fa-solid fa-calendar-days"></i>
-                        </div>
-                    </div>
-
-                    <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between">
-                        <div>
-                            <span class="text-xs text-slate-400 font-semibold block">Señas por Confirmar</span>
-                            <span id="metric-pending-deposits" class="text-3xl font-black text-rose-400">0</span>
-                            <span class="text-[11px] text-rose-400/80 font-semibold block mt-1">Tinturas / Mechas</span>
-                        </div>
-                        <div class="w-12 h-12 bg-rose-500/10 text-rose-400 rounded-xl flex items-center justify-center text-xl">
-                            <i class="fa-solid fa-hourglass-half"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- SECCIÓN 1: Control de Suscriptores VIP -->
+                <!-- SECCIÓN: Gestión de Turnos -->
                 <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6">
-                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-                        <div>
-                            <h3 class="text-lg font-black text-white flex items-center space-x-2">
-                                <i class="fa-solid fa-crown text-brand-orange"></i>
-                                <span>CLIENTES EN PLAN VIP ($35.000 / mes)</span>
-                            </h3>
-                            <p class="text-xs text-slate-400">Control de cortes semanales consumidos (4 por mes)</p>
-                        </div>
-                        <button onclick="openNewSubscriberModal()" class="bg-brand-orange hover:bg-orange-600 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs transition flex items-center space-x-2">
-                            <i class="fa-solid fa-user-plus"></i>
-                            <span>REGISTRAR NUEVO CLIENTE VIP</span>
-                        </button>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left text-xs">
-                            <thead class="bg-slate-950 text-slate-400 uppercase font-bold border-b border-slate-800">
-                                <tr>
-                                    <th class="p-3.5">Cliente</th>
-                                    <th class="p-3.5">WhatsApp</th>
-                                    <th class="p-3.5">Fecha Suscripción</th>
-                                    <th class="p-3.5">Cortes Usados (Mes)</th>
-                                    <th class="p-3.5">Estado</th>
-                                    <th class="p-3.5 text-right">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody id="subscribers-table-body" class="divide-y divide-slate-800/60 text-slate-200">
-                                <!-- Filas Dinámicas -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- SECCIÓN 2: Gestión de Turnos y Reservas -->
-                <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6">
-                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-                        <div>
-                            <h3 class="text-lg font-black text-white flex items-center space-x-2">
-                                <i class="fa-solid fa-calendar-check text-brand-teal"></i>
-                                <span>AGENDA DE TURNOS RESERVADOS</span>
-                            </h3>
-                            <p class="text-xs text-slate-400">Administra y confirma señas recibidas por transferencia</p>
-                        </div>
-                        
-                        <!-- Filtros -->
-                        <div class="flex flex-wrap items-center gap-2">
-                            <input type="date" id="filter-date" onchange="renderAdminBookings()" class="bg-slate-950 border border-slate-800 text-xs text-white rounded-xl px-3 py-2 focus:outline-none">
-                            <select id="filter-service" onchange="renderAdminBookings()" class="bg-slate-950 border border-slate-800 text-xs text-white rounded-xl px-3 py-2 focus:outline-none">
-                                <option value="all">Todos los servicios</option>
-                                <option value="socio">Suscripción VIP</option>
-                                <option value="combo_corte_barba">Combo Corte + Barba</option>
-                                <option value="individual">Corte Individual</option>
-                                <option value="barba">Barba / Perfilado</option>
-                                <option value="mechas">Mechas</option>
-                                <option value="tintura_global">Tintura Global</option>
-                            </select>
-                        </div>
-                    </div>
-
+                    <h3 class="text-lg font-black text-white mb-4">AGENDA DE TURNOS RESERVADOS</h3>
                     <div class="overflow-x-auto">
                         <table class="w-full text-left text-xs">
                             <thead class="bg-slate-950 text-slate-400 uppercase font-bold border-b border-slate-800">
@@ -671,47 +484,17 @@
                                     <th class="p-3.5">Fecha / Hora</th>
                                     <th class="p-3.5">Cliente</th>
                                     <th class="p-3.5">Servicio</th>
-                                    <th class="p-3.5">Monto Total</th>
-                                    <th class="p-3.5">Estado Pago / Seña</th>
                                     <th class="p-3.5 text-right">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody id="bookings-table-body" class="divide-y divide-slate-800/60 text-slate-200">
-                                <!-- Filas Dinámicas -->
+                                <!-- Turnos -->
                             </tbody>
                         </table>
                     </div>
                 </div>
-
             </div>
         </section>
-    </div>
-
-    <!-- Modal para Agregar Cliente VIP -->
-    <div id="modal-subscriber" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-slate-900 border-2 border-brand-orange rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
-            <div class="flex justify-between items-center pb-2 border-b border-slate-800">
-                <h4 class="text-lg font-black text-white">NUEVO SUSCRIPTOR VIP</h4>
-                <button onclick="closeNewSubscriberModal()" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <form onsubmit="saveSubscriber(event)" class="space-y-4">
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-300 mb-1">Nombre Completo</label>
-                    <input type="text" id="sub-name" required placeholder="Ej: Marcos Paiva" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-300 mb-1">Teléfono / WhatsApp</label>
-                    <input type="tel" id="sub-phone" required placeholder="Ej: 342 555-4433" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold uppercase text-slate-300 mb-1">Fecha de Cobro / Inicio</label>
-                    <input type="date" id="sub-date" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white">
-                </div>
-                <button type="submit" class="w-full bg-brand-orange hover:bg-orange-600 text-slate-950 font-black py-3 rounded-xl text-xs uppercase transition shadow-lg">
-                    GUARDAR SUSCRIPTOR ($35.000)
-                </button>
-            </form>
-        </div>
     </div>
 
     <!-- Toast Notification -->
@@ -722,118 +505,55 @@
 
     <!-- Footer -->
     <footer class="bg-slate-950 border-t border-slate-800 py-6 text-center text-xs text-slate-500">
-        <div class="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center space-y-3 sm:space-y-0">
-            <span class="font-bold text-slate-300">BARBERIA AYRTON © 2026</span>
-            <div class="flex items-center space-x-4">
-                <span>Teléfono: 342 591-3679</span>
-                <span>•</span>
-                <span>Alias: ayrton.2004.mp</span>
-            </div>
-        </div>
+        <span class="font-bold text-slate-300">BARBERIA AYRTON © 2026</span>
     </footer>
 
-    <!-- Script de Gestión de Turnos y Almacenamiento Ultra Rápido -->
+    <!-- SCRIPT PRINCIPAL SIMPLIFICADO Y ULTRA ESTABLE -->
     <script>
-        // App State Global
-        window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || [];
-        window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
-        window.adminLoggedIn = false;
+        const ALL_HOURS = [
+            "10:00 hs", "10:30 hs", "11:00 hs", "11:30 hs", "12:00 hs",
+            "15:00 hs", "15:30 hs", "16:00 hs", "16:30 hs", "17:00 hs", 
+            "17:30 hs", "18:00 hs", "18:30 hs", "19:00 hs", "19:30 hs", "20:00 hs"
+        ];
 
-        // Autenticación de Dueño Instantánea (Sin bloqueos de red)
-        function loginAdmin() {
-            const passInput = document.getElementById('admin-pass');
-            if(!passInput) return;
-            const pass = passInput.value.trim();
-            
-            if (pass === 'Ap.46296535') {
-                window.adminLoggedIn = true;
-                document.getElementById('admin-auth-card').classList.add('hidden');
-                document.getElementById('admin-dashboard').classList.remove('hidden');
-                
-                // Cargar datos
-                syncGlobalData();
-                showToast("¡Bienvenido Ayrton!");
-            } else {
-                alert("Contraseña incorrecta.");
+        window.onload = function() {
+            const dateInput = document.getElementById('booking-date');
+            if(dateInput) {
+                const today = new Date().toISOString().split('T')[0];
+                dateInput.setAttribute('min', today);
             }
-        }
+            renderClientTurnos();
+        };
 
-        function logoutAdmin() {
-            window.adminLoggedIn = false;
-            document.getElementById('admin-dashboard').classList.add('hidden');
-            document.getElementById('admin-auth-card').classList.remove('hidden');
-            const passInput = document.getElementById('admin-pass');
-            if(passInput) passInput.value = '';
-            showToast("Sesión cerrada.");
-        }
+        function updateAvailableTimeSlots() {
+            const dateVal = document.getElementById('booking-date').value;
+            const timeSelect = document.getElementById('booking-time');
+            if(!timeSelect) return;
 
-        function toggleAdminView() {
-            const clientView = document.getElementById('view-client');
-            const adminView = document.getElementById('view-admin');
-            const adminLabel = document.getElementById('admin-btn-label');
-
-            if (adminView.classList.contains('hidden')) {
-                clientView.classList.add('hidden');
-                adminView.classList.remove('hidden');
-                adminLabel.innerText = "VOLVER A CLIENTES";
-                
-                if (window.adminLoggedIn) {
-                    document.getElementById('admin-auth-card').classList.add('hidden');
-                    document.getElementById('admin-dashboard').classList.remove('hidden');
-                    syncGlobalData();
-                } else {
-                    document.getElementById('admin-auth-card').classList.remove('hidden');
-                    document.getElementById('admin-dashboard').classList.add('hidden');
-                }
-            } else {
-                adminView.classList.add('hidden');
-                clientView.classList.remove('hidden');
-                adminLabel.innerText = "PANEL DUEÑO";
+            timeSelect.innerHTML = '';
+            if(!dateVal) {
+                timeSelect.innerHTML = '<option value="">Selecciona primero la fecha</option>';
+                return;
             }
-        }
 
-        function syncGlobalData() {
-            // Cargar de memoria y resetear filtros
-            window.bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || window.bookings || [];
-            window.subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || window.subscribers || [];
-            
-            const filterDateEl = document.getElementById('filter-date');
-            if(filterDateEl) filterDateEl.value = '';
-            
-            const filterServiceEl = document.getElementById('filter-service');
-            if(filterServiceEl) filterServiceEl.value = 'all';
+            const currentBookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
+            const occupiedTimes = currentBookings
+                .filter(b => b.date === dateVal && b.status !== 'Cancelado')
+                .map(b => b.time);
 
-            renderAdminDashboard();
-            showToast("Agenda actualizada.");
-        }
+            const defaultOpt = document.createElement('option');
+            defaultOpt.value = "";
+            defaultOpt.innerText = "Selecciona un horario";
+            timeSelect.appendChild(defaultOpt);
 
-        function importBookingsPrompt() {
-            const raw = prompt("Pega aquí el mensaje de WhatsApp enviado por tu cliente:");
-            if(raw) {
-                try {
-                    let codeText = raw;
-                    if(raw.includes('[Código Turno:')) {
-                        codeText = raw.split('[Código Turno:')[1].split(']')[0].trim();
-                    }
-                    const parsed = JSON.parse(codeText);
-                    if(parsed && parsed.name) {
-                        let list = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
-                        if(!list.some(b => b.id === parsed.id)) {
-                            list.unshift(parsed);
-                            localStorage.setItem('ayrton_bookings', JSON.stringify(list));
-                            window.bookings = list;
-                            syncGlobalData();
-                            showToast("¡Turno guardado con éxito!");
-                        } else {
-                            showToast("Este turno ya figuraba en la agenda.");
-                        }
-                    } else {
-                        showToast("Formato no reconocido.");
-                    }
-                } catch(e) {
-                    showToast("No se detectó un código válido en el texto.");
-                }
-            }
+            ALL_HOURS.forEach(hr => {
+                const isOccupied = occupiedTimes.includes(hr);
+                const opt = document.createElement('option');
+                opt.value = hr;
+                opt.innerText = isOccupied ? `${hr} (OCUPADO ❌)` : `${hr} (Disponible ✅)`;
+                opt.disabled = isOccupied;
+                timeSelect.appendChild(opt);
+            });
         }
 
         function submitBooking(e) {
@@ -850,264 +570,149 @@
                 return;
             }
 
-            let serviceName = "";
-            let depositText = "";
-            let totalPrice = "";
-
-            if(type === 'socio') {
-                serviceName = "Corte Suscrito VIP";
-                depositText = "Confirmado (Suscripción VIP)";
-                totalPrice = "$0 ARS (Suscripción)";
-            } else if(type === 'combo_corte_barba') {
-                serviceName = "Promo Corte + Barba ($13.000 ARS)";
-                depositText = "Pago en local / Pendiente";
-                totalPrice = "$13.000 ARS";
-            } else if(type === 'individual') {
-                serviceName = "Corte Individual ($10.000 ARS)";
-                depositText = "Pago en local / Pendiente";
-                totalPrice = "$10.000 ARS";
-            } else if(type === 'barba') {
-                serviceName = "Barba / Perfilado ($3.000 ARS)";
-                depositText = "Pago en local / Pendiente";
-                totalPrice = "$3.000 ARS";
-            } else if(type === 'tintura_global') {
-                serviceName = "Tintura Global ($50.000 ARS)";
-                depositText = "Seña Pendiente ($25.000 ARS)";
-                totalPrice = "$50.000 ARS (Seña: $25.000)";
-            } else if(type === 'mechas') {
-                serviceName = "Mechas / Reflejos ($40.000 ARS)";
-                depositText = "Seña Pendiente ($20.000 ARS)";
-                totalPrice = "$40.000 ARS (Seña: $20.000)";
-            }
-
+            let serviceName = type;
             const newBooking = {
                 id: Date.now(),
                 name: name,
                 phone: phone,
-                service: type,
+                service: serviceName,
                 date: date,
                 time: time,
-                status: type === 'socio' ? 'Confirmado' : 'Seña Pendiente',
-                totalPrice: totalPrice
+                status: 'Pendiente'
             };
 
-            // Guardar en almacenamiento local del cliente
-            try {
-                let currentBookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
-                currentBookings.unshift(newBooking);
-                localStorage.setItem('ayrton_bookings', JSON.stringify(currentBookings));
-                window.bookings = currentBookings;
-            } catch(err) {}
+            let currentBookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
+            currentBookings.unshift(newBooking);
+            localStorage.setItem('ayrton_bookings', JSON.stringify(currentBookings));
 
-            // Formatear mensaje para WhatsApp
+            renderClientTurnos();
+
             const bookingCode = JSON.stringify(newBooking);
-            const msgText = `Hola Ayrton! Quisiera reservar un turno:\n- Nombre: ${name}\n- Servicio: ${serviceName}\n- Fecha: ${date}\n- Hora: ${time}\n- Estado de pago: ${depositText}\n- Mi Teléfono: ${phone}\n\n[Código Turno: ${bookingCode}]`;
+            const msgText = `Hola Ayrton! Quiero reservar un turno:\n- Nombre: ${name}\n- Servicio: ${type}\n- Fecha: ${date}\n- Hora: ${time}\n- Teléfono: ${phone}\n\n[Código Turno: ${bookingCode}]`;
             const waUrl = `https://api.whatsapp.com/send?phone=5493425913679&text=${encodeURIComponent(msgText)}`;
 
-            // Abrir WhatsApp al instante sin demoras
             window.location.href = waUrl;
         }
 
-        // Renderizado del Panel de Control
-        function renderAdminDashboard() {
-            renderSubscribersTable();
-            renderAdminBookings();
-            updateMetrics();
-        }
+        function renderClientTurnos() {
+            const container = document.getElementById('client-turnos-container');
+            if(!container) return;
 
-        function renderSubscribersTable() {
-            const tbody = document.getElementById('subscribers-table-body');
-            if(!tbody) return;
-            tbody.innerHTML = '';
-
-            const list = window.subscribers || [];
-            if(list.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">No hay clientes VIP registrados.</td></tr>`;
+            const currentBookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
+            if(currentBookings.length === 0) {
+                container.innerHTML = `<div class="p-4 bg-slate-900 rounded-xl text-center text-xs text-slate-400">No tienes turnos agendados en este teléfono.</div>`;
                 return;
             }
 
-            list.forEach(sub => {
-                const tr = document.createElement('tr');
-                tr.className = "hover:bg-slate-900/40";
-                tr.innerHTML = `
-                    <td class="p-3.5 font-bold text-white">${sub.name}</td>
-                    <td class="p-3.5 text-slate-300">${sub.phone}</td>
-                    <td class="p-3.5 text-slate-400">${sub.startDate}</td>
-                    <td class="p-3.5">
-                        <span class="font-black text-brand-orange">${sub.cutsUsed || 0}</span> / 4 cortes
-                    </td>
-                    <td class="p-3.5">
-                        <span class="px-2 py-1 rounded-full text-[10px] font-bold ${sub.status === 'Activo' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}">
-                            ${sub.status || 'Activo'}
-                        </span>
-                    </td>
-                    <td class="p-3.5 text-right space-x-2">
-                        <button onclick="resetSubCuts(${sub.id})" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded-lg text-[11px] font-bold">Renovar Mes</button>
-                        <button onclick="deleteSub(${sub.id})" class="text-rose-400 hover:text-rose-300 px-1 py-1"><i class="fa-solid fa-trash"></i></button>
-                    </td>
+            container.innerHTML = '';
+            currentBookings.forEach(b => {
+                const card = document.createElement('div');
+                card.className = "bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center text-xs";
+                card.innerHTML = `
+                    <div>
+                        <span class="font-bold text-white block">${b.name}</span>
+                        <span class="text-brand-teal">${b.service}</span>
+                        <span class="text-slate-400 block">${b.date} • ${b.time}</span>
+                    </div>
                 `;
-                tbody.appendChild(tr);
+                container.appendChild(card);
             });
+        }
+
+        function toggleAdminView() {
+            const clientView = document.getElementById('view-client');
+            const adminView = document.getElementById('view-admin');
+            const adminLabel = document.getElementById('admin-btn-label');
+
+            if (adminView.classList.contains('hidden')) {
+                clientView.classList.add('hidden');
+                adminView.classList.remove('hidden');
+                adminLabel.innerText = "VOLVER A CLIENTES";
+            } else {
+                adminView.classList.add('hidden');
+                clientView.classList.remove('hidden');
+                adminLabel.innerText = "PANEL DUEÑO";
+            }
+        }
+
+        function loginAdmin() {
+            const pass = document.getElementById('admin-pass').value.trim();
+            if (pass === 'Ap.46296535') {
+                document.getElementById('admin-auth-card').classList.add('hidden');
+                document.getElementById('admin-dashboard').classList.remove('hidden');
+                renderAdminBookings();
+            } else {
+                alert("Contraseña incorrecta.");
+            }
+        }
+
+        function logoutAdmin() {
+            document.getElementById('admin-dashboard').classList.add('hidden');
+            document.getElementById('admin-auth-card').classList.remove('hidden');
+        }
+
+        function importBookingsPrompt() {
+            const raw = prompt("Pega aquí el mensaje de WhatsApp que te envió el cliente:");
+            if(raw && raw.includes('[Código Turno:')) {
+                try {
+                    const codeText = raw.split('[Código Turno:')[1].split(']')[0].trim();
+                    const parsed = JSON.parse(codeText);
+                    let list = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
+                    list.unshift(parsed);
+                    localStorage.setItem('ayrton_bookings', JSON.stringify(list));
+                    renderAdminBookings();
+                    alert("¡Turno guardado en tu panel de dueño!");
+                } catch(e) {
+                    alert("Error al leer el código.");
+                }
+            } else {
+                alert("El texto pegado no contenía un código de turno válido.");
+            }
         }
 
         function renderAdminBookings() {
             const tbody = document.getElementById('bookings-table-body');
             if(!tbody) return;
             tbody.innerHTML = '';
-
-            const dateFilter = document.getElementById('filter-date')?.value;
-            const serviceFilter = document.getElementById('filter-service')?.value;
-
-            let list = window.bookings || [];
-
-            if(dateFilter) {
-                list = list.filter(b => b.date === dateFilter);
-            }
-            if(serviceFilter && serviceFilter !== 'all') {
-                list = list.filter(b => b.service === serviceFilter);
-            }
+            const list = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
 
             if(list.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">No hay turnos agendados.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-500">No hay turnos registrados.</td></tr>`;
                 return;
             }
 
             list.forEach(b => {
                 const tr = document.createElement('tr');
-                tr.className = "hover:bg-slate-900/40";
-                
-                const isConfirmed = b.status === 'Confirmado';
-                const badgeClass = isConfirmed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-brand-orange/20 text-brand-orange';
-
                 tr.innerHTML = `
-                    <td class="p-3.5 font-bold text-white">${b.date} • ${b.time}</td>
-                    <td class="p-3.5">
-                        <span class="font-bold text-slate-200 block">${b.name}</span>
-                        <span class="text-[11px] text-slate-400">${b.phone}</span>
-                    </td>
-                    <td class="p-3.5 text-slate-300 uppercase text-[11px] font-semibold">${b.service}</td>
-                    <td class="p-3.5 font-bold text-white">${b.totalPrice || '-'}</td>
-                    <td class="p-3.5">
-                        <span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${badgeClass}">
-                            ${b.status}
-                        </span>
-                    </td>
-                    <td class="p-3.5 text-right space-x-2">
-                        <button onclick="toggleBookingStatus(${b.id})" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded-lg text-[11px] font-bold">
-                            ${isConfirmed ? 'Marcar Pendiente' : 'Confirmar Seña'}
-                        </button>
-                        <button onclick="deleteBooking(${b.id})" class="text-rose-400 hover:text-rose-300 px-1 py-1"><i class="fa-solid fa-trash"></i></button>
+                    <td class="p-3 font-bold text-white">${b.date} • ${b.time}</td>
+                    <td class="p-3">${b.name} (${b.phone})</td>
+                    <td class="p-3 uppercase text-brand-teal font-bold">${b.service}</td>
+                    <td class="p-3 text-right">
+                        <button onclick="deleteBooking(${b.id})" class="text-rose-400 hover:text-rose-300">Eliminar</button>
                     </td>
                 `;
                 tbody.appendChild(tr);
             });
         }
 
-        function toggleBookingStatus(id) {
-            let list = JSON.parse(localStorage.getItem('ayrton_bookings')) || window.bookings;
-            list = list.map(b => {
-                if(b.id === id) {
-                    b.status = (b.status === 'Confirmado') ? 'Seña Pendiente' : 'Confirmado';
-                }
-                return b;
-            });
-            localStorage.setItem('ayrton_bookings', JSON.stringify(list));
-            window.bookings = list;
-            renderAdminDashboard();
-            showToast("Estado actualizado.");
-        }
-
         function deleteBooking(id) {
-            if(confirm("¿Seguro deseas eliminar este turno?")) {
-                let list = JSON.parse(localStorage.getItem('ayrton_bookings')) || window.bookings;
-                list = list.filter(b => b.id !== id);
-                localStorage.setItem('ayrton_bookings', JSON.stringify(list));
-                window.bookings = list;
-                renderAdminDashboard();
-                showToast("Turno eliminado.");
-            }
+            let list = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
+            list = list.filter(b => b.id !== id);
+            localStorage.setItem('ayrton_bookings', JSON.stringify(list));
+            renderAdminBookings();
         }
 
-        function updateMetrics() {
-            const subs = window.subscribers || [];
-            const bks = window.bookings || [];
-
-            const vipCount = subs.filter(s => s.status === 'Activo').length;
-            const vipRev = vipCount * 35000;
-            const pendingDep = bks.filter(b => b.status !== 'Confirmado').length;
-
-            const vipCountEl = document.getElementById('metric-vip-count');
-            const vipRevEl = document.getElementById('metric-vip-revenue');
-            const bksCountEl = document.getElementById('metric-bookings-count');
-            const pendingDepEl = document.getElementById('metric-pending-deposits');
-
-            if(vipCountEl) vipCountEl.innerText = vipCount;
-            if(vipRevEl) vipRevEl.innerText = `$${vipRev.toLocaleString('es-AR')}`;
-            if(bksCountEl) bksCountEl.innerText = bks.length;
-            if(pendingDepEl) pendingDepEl.innerText = pendingDep;
-        }
-
-        // Utilidades Auxiliares
         function copyAlias() {
             const alias = "ayrton.2004.mp";
-            const tempInput = document.createElement("input");
-            tempInput.value = alias;
-            document.body.appendChild(tempInput);
-            tempInput.select();
-            document.execCommand("copy");
-            document.body.removeChild(tempInput);
-            showToast("Alias copiado: ayrton.2004.mp");
-        }
-
-        function showToast(msg) {
-            const toast = document.getElementById('toast');
-            const toastText = document.getElementById('toast-text');
-            if(!toast || !toastText) return;
-            toastText.innerText = msg;
-            toast.classList.remove('translate-y-32', 'opacity-0', 'pointer-events-none');
-            setTimeout(() => {
-                toast.classList.add('translate-y-32', 'opacity-0', 'pointer-events-none');
-            }, 3000);
+            navigator.clipboard.writeText(alias);
+            alert("Alias copiado: " + alias);
         }
 
         function quickSelectService(val) {
             const select = document.getElementById('service-select');
-            if(select) {
-                select.value = val;
-                calculateDeposit();
-            }
-            const turnosSection = document.getElementById('turnos');
-            if(turnosSection) turnosSection.scrollIntoView({behavior: 'smooth'});
-        }
-
-        function calculateDeposit() {
-            const select = document.getElementById('service-select');
-            const totalDisplay = document.getElementById('total-price-display');
-            const depositDisplay = document.getElementById('deposit-price-display');
-            if(!select || !totalDisplay || !depositDisplay) return;
-
-            const type = select.value;
-
-            if(type === 'socio') {
-                totalDisplay.innerText = "$0 ARS (Suscrito VIP)";
-                depositDisplay.innerText = "$0 ARS";
-            } else if(type === 'combo_corte_barba') {
-                totalDisplay.innerText = "$13.000 ARS";
-                depositDisplay.innerText = "$0 ARS (Se paga en la barbería)";
-            } else if(type === 'individual') {
-                totalDisplay.innerText = "$10.000 ARS";
-                depositDisplay.innerText = "$0 ARS (Se paga en la barbería)";
-            } else if(type === 'barba') {
-                totalDisplay.innerText = "$3.000 ARS";
-                depositDisplay.innerText = "$0 ARS (Se paga en la barbería)";
-            } else if(type === 'mechas') {
-                totalDisplay.innerText = "$40.000 ARS";
-                depositDisplay.innerText = "$20.000 ARS (Seña del 50%)";
-            } else if(type === 'tintura_global') {
-                totalDisplay.innerText = "$50.000 ARS";
-                depositDisplay.innerText = "$25.000 ARS (Seña del 50%)";
-            }
+            if(select) select.value = val;
+            document.getElementById('turnos').scrollIntoView({behavior: 'smooth'});
         }
     </script>
 </body>
-    </html>
+</html>
