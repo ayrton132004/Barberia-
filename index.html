@@ -753,7 +753,7 @@
     </footer>
 
     <script>
-        // ESTADO GLOBAL CON PERSISTENCIA LOCALSTORAGE
+        // ESTADO GLOBAL CON PERSISTENCIA LOCALSTORAGE Y NUBE EN TIEMPO REAL
         let adminLoggedIn = false;
         
         let subscribers = JSON.parse(localStorage.getItem('ayrton_subscribers')) || [
@@ -761,10 +761,42 @@
             { id: 2, name: "Mateo Rossi", phone: "342 511-2233", startDate: "2026-02-15", cutsUsed: 4, status: "Activo" }
         ];
 
-        let bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [
-            { id: 101, name: "Lucas Gómez", phone: "342 455-8899", service: "socio", date: "2026-03-10", time: "16:00 hs", status: "Confirmado", totalPrice: "$0 ARS (Suscripción)" },
-            { id: 102, name: "Franco Benítez", phone: "342 677-1122", service: "tintura_global", date: "2026-03-12", time: "18:00 hs", status: "Seña Pendiente", totalPrice: "$50.000 ARS (Seña: $25.000)" }
-        ];
+        let bookings = JSON.parse(localStorage.getItem('ayrton_bookings')) || [];
+
+        // Sincronización en la Nube en Tiempo Real
+        const BIN_ID = 'ayrton_barberia_global_v1';
+        const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+        async function fetchGlobalBookings() {
+            try {
+                const res = await fetch(`https://api.myjson.online/v1/records/ayrton_barberia_turnos`, { method: 'GET' });
+                if(res.ok) {
+                    const data = await res.json();
+                    if(data && Array.isArray(data.data)) {
+                        bookings = data.data;
+                        localStorage.setItem('ayrton_bookings', JSON.stringify(bookings));
+                        updateTimeSlotOptions();
+                        renderClientBookings();
+                        if(adminLoggedIn) renderAdminDashboard();
+                    }
+                }
+            } catch(e) {
+                // Fallback a almacenamiento local si no hay conexión
+            }
+        }
+
+        async function syncGlobalBookings() {
+            saveData();
+            try {
+                await fetch(`https://api.myjson.online/v1/records/ayrton_barberia_turnos`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: bookings })
+                });
+            } catch(e) {
+                // Si falla la red, el turno queda guardado localmente de todos modos
+            }
+        }
 
         function saveData() {
             localStorage.setItem('ayrton_subscribers', JSON.stringify(subscribers));
@@ -1019,25 +1051,29 @@
 
             // Buscar patron CÓDIGO DE RESERVA: AYR-XXXXXX
             const codeMatch = rawText.match(/AYR-[A-Z0-9]+/i);
-            const nameMatch = rawText.match(/Nombre:\s*([^\n]+)/i);
-            const phoneMatch = rawText.match(/Teléfono:\s*([^\n]+)/i);
+            const nameMatch = rawText.match(/(?:Cliente|Nombre):\s*([^\n]+)/i);
+            const phoneMatch = rawText.match(/(?:Teléfono|Telefono|Tel):\s*([^\n]+)/i);
             const serviceMatch = rawText.match(/Servicio:\s*([^\n]+)/i);
             const dateMatch = rawText.match(/Fecha:\s*([^\n]+)/i);
             const timeMatch = rawText.match(/Hora:\s*([^\n]+)/i);
 
             if (codeMatch || (nameMatch && dateMatch && timeMatch)) {
                 const code = codeMatch ? codeMatch[0].toUpperCase() : 'AYR-' + Math.random().toString(36).substring(2, 7).toUpperCase();
-                const name = nameMatch ? nameMatch[1].trim() : 'Cliente WhatsApp';
-                const phone = phoneMatch ? phoneMatch[1].trim() : 'En WhatsApp';
-                const serviceText = serviceMatch ? serviceMatch[1].trim() : 'Corte Individual';
-                const date = dateMatch ? dateMatch[1].trim() : new Date().toISOString().split('T')[0];
-                const time = timeMatch ? timeMatch[1].trim() : '10:00 hs';
+                
+                // Limpiar caracteres especiales de los emojis si vienen del texto de WhatsApp
+                let name = nameMatch ? nameMatch[1].replace(/[*_]/g, '').trim() : 'Cliente';
+                let phone = phoneMatch ? phoneMatch[1].replace(/[*_]/g, '').trim() : 'En WhatsApp';
+                let serviceText = serviceMatch ? serviceMatch[1].replace(/[*_]/g, '').trim() : 'Corte Individual';
+                let date = dateMatch ? dateMatch[1].replace(/[*_]/g, '').trim() : new Date().toISOString().split('T')[0];
+                let time = timeMatch ? timeMatch[1].replace(/[*_]/g, '').trim() : '10:00 hs';
 
                 let serviceKey = 'individual';
                 if(serviceText.toLowerCase().includes('vip')) serviceKey = 'socio';
                 if(serviceText.toLowerCase().includes('barba')) serviceKey = 'barba';
                 if(serviceText.toLowerCase().includes('mechas')) serviceKey = 'mechas';
                 if(serviceText.toLowerCase().includes('tintura')) serviceKey = 'tintura_global';
+                if(serviceText.toLowerCase().includes('2 cortes')) serviceKey = 'plan_2cortes';
+                if(serviceText.toLowerCase().includes('combo')) serviceKey = 'combo_corte_barba';
 
                 const newBooking = {
                     id: Date.now(),
@@ -1052,10 +1088,10 @@
                 };
 
                 bookings.push(newBooking);
-                saveData();
+                syncGlobalBookings();
                 renderAdminDashboard();
                 closeImportModal();
-                showToast(`¡Turno ${code} cargado con éxito!`);
+                showToast(`¡Turno ${code} de ${name} cargado con éxito!`);
             } else {
                 showToast("No se pudo detectar el formato. Revisa el texto pegado.");
             }
@@ -1170,10 +1206,10 @@
             // Generar código de reserva único (Ej: AYR-A8K2)
             const bookingCode = 'AYR-' + Math.random().toString(36).substring(2, 6).toUpperCase();
 
-            // Verificar disponibilidad antes de enviar
+            // Verificar disponibilidad antes de enviar (local y refresco previo)
             const isTaken = bookings.some(b => b.date === date && b.time === time);
             if(isTaken) {
-                showToast("¡Ese horario ya está reservado! Por favor elige otro.");
+                showToast("¡Ese horario acaba de ser ocupado! Por favor elige otro.");
                 updateTimeSlotOptions();
                 return;
             }
@@ -1226,7 +1262,7 @@
             };
 
             bookings.push(newBooking);
-            saveData();
+            syncGlobalBookings();
             renderClientBookings();
             updateTimeSlotOptions();
 
@@ -1242,7 +1278,7 @@
             waBtn.href = waUrl;
             successBox.classList.remove('hidden');
 
-            showToast("¡Turno guardado! Abre WhatsApp para confirmar.");
+            showToast("¡Turno guardado y sincronizado! Abre WhatsApp para enviar la confirmación.");
         }
 
         function renderClientBookings() {
@@ -1366,6 +1402,10 @@
             calculateDeposit();
             updateTimeSlotOptions();
             renderClientBookings();
+            
+            // Cargar turnos globales al iniciar y refrescar automáticamente cada 15 segundos
+            fetchGlobalBookings();
+            setInterval(fetchGlobalBookings, 15000);
         });
     </script>
 </body>
