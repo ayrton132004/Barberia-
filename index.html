@@ -558,11 +558,10 @@
         // Configuración principal de contacto y acceso
         const BARBER_WHATSAPP = "5493425913679";
         const OWNER_PASSWORD = "ayrton2026";
-        // Almacén en nube público directo compatible con GitHub Pages (CORS habilitado)
-        const CLOUD_SYNC_API = "https://keyvalue.immanuel.co/api/KeyVal";
-        const CLOUD_APP_KEY = "ayrton_barber_2026_v3";
-        const CLOUD_ITEM_KEY = "turnos_agenda_live";
-        const LOCAL_CACHE_KEY = "barberia_ayrton_cache_v3";
+        // Canal público en tiempo real con CORS abierto compatible con GitHub Pages
+        const NTFY_TOPIC = "barberia_ayrton_santa_fe_turnos_live_2026_v4";
+        const NTFY_BASE_URL = `https://ntfy.sh/${NTFY_TOPIC}`;
+        const LOCAL_CACHE_KEY = "barberia_ayrton_cache_v4";
 
         // Franjas horarias de mañana (10:00 - 12:00) y tarde (15:00 - 20:00)
         const TIME_SLOTS = [
@@ -588,6 +587,7 @@
         let toastTimeout = null;
         let isSyncingNow = false;
         let livePollTimer = null;
+        let liveEventSource = null;
 
         // Estado de conexión Firestore en tiempo real (cuando corre dentro del entorno)
         let db = null;
@@ -749,20 +749,21 @@
                         }
                     },
                     (error) => {
-                        console.error("Error en tiempo real Firestore:", error);
+                        console.warn("Error en suscripción en tiempo real:", error);
                         realtimeReady = false;
+                        fallbackCloudPoll(false);
                         startLivePollingLoop();
                     }
                 );
             } catch (err) {
-                console.error("Error inicializando tiempo real:", err);
+                console.warn("Fallo al iniciar Firestore en tiempo real:", err);
                 realtimeReady = false;
                 await fallbackCloudPoll(false);
                 startLivePollingLoop();
             }
         }
 
-        // Bucle en tiempo real cada 3 segundos para GitHub Pages y navegadores móviles
+        // Bucle en tiempo real y escucha SSE para GitHub Pages y navegadores móviles
         function startLivePollingLoop() {
             if (livePollTimer) clearInterval(livePollTimer);
             livePollTimer = setInterval(() => {
@@ -770,6 +771,23 @@
                     fallbackCloudPoll(false);
                 }
             }, 3000);
+
+            try {
+                if (liveEventSource) liveEventSource.close();
+                liveEventSource = new EventSource(`${NTFY_BASE_URL}/sse`);
+                liveEventSource.onmessage = (event) => {
+                    try {
+                        const packet = JSON.parse(event.data);
+                        if (packet && packet.message) {
+                            fallbackCloudPoll(false);
+                        }
+                    } catch (e) {
+                        // Ignorar latidos de conexión
+                    }
+                };
+            } catch (e) {
+                // Si el navegador bloquea SSE, el bucle cada 3s mantiene todo sincronizado
+            }
         }
 
         function loadLocalFallback() {
@@ -793,29 +811,65 @@
             }
         }
 
-        async function readRemoteKeyVal() {
-            const url = `${CLOUD_SYNC_API}/GetValue/${encodeURIComponent(CLOUD_APP_KEY)}/${encodeURIComponent(CLOUD_ITEM_KEY)}?t=${Date.now()}`;
-            const res = await fetch(url, { method: "GET", cache: "no-store" });
-            if (!res.ok) throw new Error(`HTTP_${res.status}`);
-            let rawText = await res.text();
-            if (!rawText) return [];
-            rawText = rawText.trim();
-            if (rawText.startsWith('"') && rawText.endsWith('"')) {
-                rawText = JSON.parse(rawText);
+        // Reconstruye el estado exacto de la agenda a partir de los eventos sincronizados en la nube
+        function applyRemoteEventLog(events) {
+            const bySlot = new Map();
+            const sortedEvents = [...events].sort((a, b) => (Number(a.ts) || 0) - (Number(b.ts) || 0));
+
+            for (const ev of sortedEvents) {
+                if (!ev || typeof ev !== "object") continue;
+                if (ev.type === "UPSERT" && ev.booking) {
+                    const norm = normalizeBookingRecord(ev.booking);
+                    if (norm) {
+                        bySlot.set(norm.docId, norm);
+                    }
+                } else if (ev.type === "CUTS" && ev.docId) {
+                    const existing = bySlot.get(String(ev.docId));
+                    if (existing) {
+                        existing.cutsUsed = Number(ev.cutsUsed) || 0;
+                        bySlot.set(existing.docId, existing);
+                    }
+                } else if (ev.type === "DELETE" && ev.docId) {
+                    bySlot.delete(String(ev.docId));
+                }
             }
-            if (!rawText || rawText === "null") return [];
-            const parsed = typeof rawText === "string" ? JSON.parse(rawText) : rawText;
-            return Array.isArray(parsed)
-                ? sortBookings(parsed.map(item => normalizeBookingRecord(item)).filter(Boolean))
-                : [];
+            return sortBookings(Array.from(bySlot.values()));
         }
 
-        async function writeRemoteKeyVal(list) {
-            const payloadStr = JSON.stringify(list);
-            const url = `${CLOUD_SYNC_API}/UpdateValue/${encodeURIComponent(CLOUD_APP_KEY)}/${encodeURIComponent(CLOUD_ITEM_KEY)}/${encodeURIComponent(payloadStr)}`;
-            const res = await fetch(url, { method: "POST", cache: "no-store" });
+        async function readRemoteKeyVal() {
+            const url = `${NTFY_BASE_URL}/json?poll=1&since=all&_t=${Date.now()}`;
+            const res = await fetch(url, { method: "GET", cache: "no-store" });
             if (!res.ok) throw new Error(`HTTP_${res.status}`);
-            saveLocalFallback(list);
+            const rawText = await res.text();
+            if (!rawText || !rawText.trim()) return [];
+
+            const lines = rawText.trim().split("\n");
+            const parsedEvents = [];
+            for (const line of lines) {
+                try {
+                    const wrapper = JSON.parse(line);
+                    if (wrapper && wrapper.event === "message" && wrapper.message) {
+                        const payload = JSON.parse(wrapper.message);
+                        if (payload && payload.type) {
+                            parsedEvents.push(payload);
+                        }
+                    }
+                } catch (e) {
+                    // Ignorar líneas no JSON
+                }
+            }
+            return applyRemoteEventLog(parsedEvents);
+        }
+
+        async function publishCloudEvent(eventObj) {
+            const res = await fetch(NTFY_BASE_URL, {
+                method: "POST",
+                body: JSON.stringify({
+                    ...eventObj,
+                    ts: Date.now()
+                })
+            });
+            if (!res.ok) throw new Error(`HTTP_${res.status}`);
         }
 
         // Lectura directa sin caché desde la nube global
@@ -829,7 +883,7 @@
 
                 appointments = remoteList;
                 saveLocalFallback(remoteList);
-                updateSyncBadge("Agenda online en vivo conectada (sincronización cada 3s)", true);
+                updateSyncBadge("Agenda online en tiempo real conectada (todos los celulares sincronizados)", true);
 
                 if (prevSig !== nextSig || showFeedback) {
                     renderTimeSlots();
@@ -845,7 +899,7 @@
                     renderClientAgenda();
                     if (isOwnerLogged) renderOwnerTable();
                 }
-                updateSyncBadge("Sincronizando en segundo plano...", false);
+                updateSyncBadge("Sincronizando agenda en segundo plano...", false);
                 if (showFeedback) notify("No se pudo actualizar desde la nube en este instante");
             } finally {
                 isSyncingNow = false;
@@ -864,7 +918,7 @@
                 return;
             }
 
-            // Descarga la última versión antes de fusionar para no pisar reservas de otros clientes
+            // Descarga la última versión antes de confirmar para no pisar reservas simultáneas
             let latestRemote = [...appointments];
             try {
                 latestRemote = await readRemoteKeyVal();
@@ -881,13 +935,18 @@
                 throw new Error("SLOT_ALREADY_TAKEN");
             }
 
+            await publishCloudEvent({
+                type: "UPSERT",
+                booking: bookingRecord
+            });
+
             const mergedList = sortBookings([
                 ...latestRemote.filter(item => !(item.date === bookingRecord.date && item.time === bookingRecord.time)),
                 bookingRecord
             ]);
 
-            await writeRemoteKeyVal(mergedList);
             appointments = mergedList;
+            saveLocalFallback(mergedList);
         }
 
         async function syncFromCloud(showFeedback = false) {
@@ -1270,7 +1329,12 @@
                 const colRef = getBookingsCollection();
                 await updateDoc(doc(colRef, String(target.docId)), { cutsUsed: nextVal });
             } else {
-                await saveBookingToCloud(target);
+                saveLocalFallback(appointments);
+                await publishCloudEvent({
+                    type: "CUTS",
+                    docId: String(target.docId),
+                    cutsUsed: nextVal
+                });
             }
         }
 
@@ -1285,7 +1349,12 @@
                 const colRef = getBookingsCollection();
                 await updateDoc(doc(colRef, String(target.docId)), { cutsUsed: 0 });
             } else {
-                await saveBookingToCloud(target);
+                saveLocalFallback(appointments);
+                await publishCloudEvent({
+                    type: "CUTS",
+                    docId: String(target.docId),
+                    cutsUsed: 0
+                });
             }
         }
 
@@ -1568,10 +1637,13 @@
                     const colRef = getBookingsCollection();
                     await deleteDoc(doc(colRef, targetDocId));
                 } else {
-                    await fallbackCloudPoll(false);
+                    await publishCloudEvent({
+                        type: "DELETE",
+                        docId: targetDocId
+                    });
                     const nextList = appointments.filter(item => String(item.docId) !== targetDocId);
-                    await writeRemoteKeyVal(nextList);
                     appointments = nextList;
+                    saveLocalFallback(nextList);
                     renderOwnerTable();
                     renderClientAgenda();
                     renderTimeSlots();
