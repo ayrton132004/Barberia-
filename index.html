@@ -558,8 +558,11 @@
         // Configuración principal de contacto y acceso
         const BARBER_WHATSAPP = "5493425913679";
         const OWNER_PASSWORD = "ayrton2026";
-        // Almacén en nube público directo para GitHub Pages (sin autenticación extra ni caché)
-        const CLOUD_SYNC_ENDPOINT = "https://kvdb.io/Dr8xK9pLm2QnV7wZ4tR6yB/barberia_ayrton_turnos_v1";
+        // Almacén en nube público directo compatible con GitHub Pages (CORS habilitado)
+        const CLOUD_SYNC_API = "https://keyvalue.immanuel.co/api/KeyVal";
+        const CLOUD_APP_KEY = "ayrton_barber_2026_v3";
+        const CLOUD_ITEM_KEY = "turnos_agenda_live";
+        const LOCAL_CACHE_KEY = "barberia_ayrton_cache_v3";
 
         // Franjas horarias de mañana (10:00 - 12:00) y tarde (15:00 - 20:00)
         const TIME_SLOTS = [
@@ -769,56 +772,81 @@
             }, 3000);
         }
 
+        function loadLocalFallback() {
+            try {
+                const raw = localStorage.getItem(LOCAL_CACHE_KEY);
+                if (!raw) return [];
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed)
+                    ? sortBookings(parsed.map(item => normalizeBookingRecord(item)).filter(Boolean))
+                    : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveLocalFallback(list) {
+            try {
+                localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(list));
+            } catch (e) {
+                // Ignorar si el navegador restringe almacenamiento local
+            }
+        }
+
+        async function readRemoteKeyVal() {
+            const url = `${CLOUD_SYNC_API}/GetValue/${encodeURIComponent(CLOUD_APP_KEY)}/${encodeURIComponent(CLOUD_ITEM_KEY)}?t=${Date.now()}`;
+            const res = await fetch(url, { method: "GET", cache: "no-store" });
+            if (!res.ok) throw new Error(`HTTP_${res.status}`);
+            let rawText = await res.text();
+            if (!rawText) return [];
+            rawText = rawText.trim();
+            if (rawText.startsWith('"') && rawText.endsWith('"')) {
+                rawText = JSON.parse(rawText);
+            }
+            if (!rawText || rawText === "null") return [];
+            const parsed = typeof rawText === "string" ? JSON.parse(rawText) : rawText;
+            return Array.isArray(parsed)
+                ? sortBookings(parsed.map(item => normalizeBookingRecord(item)).filter(Boolean))
+                : [];
+        }
+
+        async function writeRemoteKeyVal(list) {
+            const payloadStr = JSON.stringify(list);
+            const url = `${CLOUD_SYNC_API}/UpdateValue/${encodeURIComponent(CLOUD_APP_KEY)}/${encodeURIComponent(CLOUD_ITEM_KEY)}/${encodeURIComponent(payloadStr)}`;
+            const res = await fetch(url, { method: "POST", cache: "no-store" });
+            if (!res.ok) throw new Error(`HTTP_${res.status}`);
+            saveLocalFallback(list);
+        }
+
         // Lectura directa sin caché desde la nube global
         async function fallbackCloudPoll(showFeedback = false) {
             if (isSyncingNow) return;
             isSyncingNow = true;
             try {
-                const res = await fetch(`${CLOUD_SYNC_ENDPOINT}?nocache=${Date.now()}`, {
-                    method: "GET",
-                    cache: "no-store"
-                });
+                const remoteList = await readRemoteKeyVal();
+                const prevSig = JSON.stringify(appointments.map(a => `${a.docId}:${a.cutsUsed}`));
+                const nextSig = JSON.stringify(remoteList.map(a => `${a.docId}:${a.cutsUsed}`));
 
-                if (res.status === 404) {
-                    // Inicializa el contenedor remoto vacío la primera vez
-                    await fetch(CLOUD_SYNC_ENDPOINT, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify([])
-                    });
-                    appointments = [];
-                    updateSyncBadge("Agenda online en vivo conectada (sincronización cada 3s)", true);
+                appointments = remoteList;
+                saveLocalFallback(remoteList);
+                updateSyncBadge("Agenda online en vivo conectada (sincronización cada 3s)", true);
+
+                if (prevSig !== nextSig || showFeedback) {
                     renderTimeSlots();
                     renderClientAgenda();
                     if (isOwnerLogged) renderOwnerTable();
-                    return;
                 }
-
-                if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data)) {
-                        const prevSig = JSON.stringify(appointments.map(a => `${a.docId}:${a.cutsUsed}`));
-                        const nextList = sortBookings(
-                            data.map(item => normalizeBookingRecord(item)).filter(Boolean)
-                        );
-                        const nextSig = JSON.stringify(nextList.map(a => `${a.docId}:${a.cutsUsed}`));
-
-                        appointments = nextList;
-                        updateSyncBadge("Agenda online en vivo conectada (sincronización cada 3s)", true);
-
-                        if (prevSig !== nextSig || showFeedback) {
-                            renderTimeSlots();
-                            renderClientAgenda();
-                            if (isOwnerLogged) renderOwnerTable();
-                        }
-                        if (showFeedback) notify("Horarios actualizados en vivo");
-                    }
-                } else {
-                    updateSyncBadge("Reintentando conexión con la nube...", false);
-                }
+                if (showFeedback) notify("Horarios actualizados en vivo");
             } catch (err) {
-                updateSyncBadge("Verificando conexión de red...", false);
-                if (showFeedback) notify("No se pudo actualizar en este momento");
+                const cached = loadLocalFallback();
+                if (appointments.length === 0 && cached.length > 0) {
+                    appointments = cached;
+                    renderTimeSlots();
+                    renderClientAgenda();
+                    if (isOwnerLogged) renderOwnerTable();
+                }
+                updateSyncBadge("Sincronizando en segundo plano...", false);
+                if (showFeedback) notify("No se pudo actualizar desde la nube en este instante");
             } finally {
                 isSyncingNow = false;
             }
@@ -839,18 +867,9 @@
             // Descarga la última versión antes de fusionar para no pisar reservas de otros clientes
             let latestRemote = [...appointments];
             try {
-                const latestRes = await fetch(`${CLOUD_SYNC_ENDPOINT}?nocache=${Date.now()}`, {
-                    method: "GET",
-                    cache: "no-store"
-                });
-                if (latestRes.ok) {
-                    const remoteData = await latestRes.json();
-                    if (Array.isArray(remoteData)) {
-                        latestRemote = remoteData.map(item => normalizeBookingRecord(item)).filter(Boolean);
-                    }
-                }
+                latestRemote = await readRemoteKeyVal();
             } catch (err) {
-                console.warn("Usando estado actual para fusionar:", err);
+                latestRemote = loadLocalFallback().length > 0 ? loadLocalFallback() : [...appointments];
             }
 
             const alreadyExists = latestRemote.find(
@@ -858,6 +877,7 @@
             );
             if (alreadyExists) {
                 appointments = sortBookings(latestRemote);
+                saveLocalFallback(appointments);
                 throw new Error("SLOT_ALREADY_TAKEN");
             }
 
@@ -866,16 +886,7 @@
                 bookingRecord
             ]);
 
-            const postRes = await fetch(CLOUD_SYNC_ENDPOINT, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(mergedList)
-            });
-
-            if (!postRes.ok) {
-                throw new Error("CLOUD_WRITE_FAILED");
-            }
-
+            await writeRemoteKeyVal(mergedList);
             appointments = mergedList;
         }
 
@@ -1559,11 +1570,7 @@
                 } else {
                     await fallbackCloudPoll(false);
                     const nextList = appointments.filter(item => String(item.docId) !== targetDocId);
-                    await fetch(CLOUD_SYNC_ENDPOINT, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(nextList)
-                    });
+                    await writeRemoteKeyVal(nextList);
                     appointments = nextList;
                     renderOwnerTable();
                     renderClientAgenda();
