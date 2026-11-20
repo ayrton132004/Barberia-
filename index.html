@@ -411,6 +411,10 @@
                     </button>
                 </div>
             </div>
+            <div id="sync-status-bar" class="mb-3 flex items-center gap-2 text-[11px] text-emerald-400">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span id="sync-status-text">Conectando agenda en tiempo real...</span>
+            </div>
             <div id="client-agenda-list" class="space-y-2.5"></div>
         </div>
     </section>
@@ -537,11 +541,24 @@
         </div>
     </div>
 
-    <script>
-        // Configuración principal de contacto, acceso y sincronización
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import {
+            getFirestore,
+            collection,
+            doc,
+            setDoc,
+            updateDoc,
+            deleteDoc,
+            onSnapshot,
+            getDocs
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Configuración principal de contacto y acceso
         const BARBER_WHATSAPP = "5493425913679";
         const OWNER_PASSWORD = "ayrton2026";
-        const CLOUD_SYNC_URL = "https://kvdb.io/AyrtonBarberia2026VIP/turnos_globales";
+        const FALLBACK_CLOUD_URL = "https://kvdb.io/AyrtonBarberia2026VIP/turnos_globales";
 
         // Franjas horarias de mañana (10:00 - 12:00) y tarde (15:00 - 20:00)
         const TIME_SLOTS = [
@@ -566,6 +583,38 @@
         let lastReceiptMessage = "";
         let toastTimeout = null;
 
+        // Estado de conexión Firestore en tiempo real
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+        let realtimeReady = false;
+        let unsubscribeRealtime = null;
+
+        const appId = typeof __app_id !== "undefined" ? __app_id : "barberia-ayrton-live";
+
+        function getBookingsCollection() {
+            if (!db) return null;
+            return collection(db, "artifacts", appId, "public", "data", "turnos_barberia_ayrton");
+        }
+
+        function updateSyncBadge(text, isLive = true) {
+            const label = document.getElementById("sync-status-text");
+            const bar = document.getElementById("sync-status-bar");
+            if (label) label.textContent = text;
+            if (bar) {
+                bar.className = isLive
+                    ? "mb-3 flex items-center gap-2 text-[11px] text-emerald-400"
+                    : "mb-3 flex items-center gap-2 text-[11px] text-amber-400";
+            }
+        }
+
+        // Genera clave determinística por fecha + horario para evitar que dos celulares pisen el mismo turno
+        function buildSlotDocId(dateStr, timeStr) {
+            const cleanDate = String(dateStr || "").trim().replace(/[^0-9-]/g, "");
+            const cleanTime = String(timeStr || "").trim().replace(/[^0-9]/g, "");
+            return `slot_${cleanDate}_${cleanTime}`;
+        }
+
         // Detecta si un servicio corresponde a Club VIP o Plan Quincenal y devuelve su límite
         function getPlanInfoByService(serviceText) {
             const text = String(serviceText || "")
@@ -581,7 +630,6 @@
             return null;
         }
 
-        // Escapa texto HTML para evitar inyección en vistas dinámicas
         function escapeHtml(value) {
             return String(value || "")
                 .replace(/&/g, "&amp;")
@@ -591,158 +639,235 @@
                 .replace(/'/g, "&#39;");
         }
 
-        // Muestra notificación flotante no bloqueante
         function notify(message) {
-            const toast = document.getElementById('toast');
-            const msgEl = document.getElementById('toast-msg');
+            const toast = document.getElementById("toast");
+            const msgEl = document.getElementById("toast-msg");
             if (!toast || !msgEl) return;
 
             msgEl.textContent = message;
-            toast.classList.remove('translate-y-24', 'opacity-0', 'pointer-events-none');
-            toast.classList.add('translate-y-0', 'opacity-100');
+            toast.classList.remove("translate-y-24", "opacity-0", "pointer-events-none");
+            toast.classList.add("translate-y-0", "opacity-100");
 
-            if (toastTimeout) {
-                clearTimeout(toastTimeout);
-            }
+            if (toastTimeout) clearTimeout(toastTimeout);
             toastTimeout = setTimeout(() => {
-                toast.classList.remove('translate-y-0', 'opacity-100');
-                toast.classList.add('translate-y-24', 'opacity-0', 'pointer-events-none');
+                toast.classList.remove("translate-y-0", "opacity-100");
+                toast.classList.add("translate-y-24", "opacity-0", "pointer-events-none");
             }, 3400);
         }
 
-        // Fusiona listas de turnos evitando duplicados por código o fecha+hora
-        function mergeAppointments(primaryList, secondaryList) {
-            const combined = [
-                ...(Array.isArray(primaryList) ? primaryList : []),
-                ...(Array.isArray(secondaryList) ? secondaryList : [])
-            ];
-            const uniqueMap = new Map();
+        function normalizeBookingRecord(item, fallbackId = "") {
+            if (!item || !item.date || !item.time) return null;
+            const date = String(item.date).trim();
+            const time = String(item.time).trim();
+            const docId = String(item.docId || fallbackId || buildSlotDocId(date, time));
+            const serviceStr = String(item.service || "Corte Individual ($10.000)").trim();
+            const planMeta = getPlanInfoByService(serviceStr);
+            const rawCutsUsed = Number(item.cutsUsed);
+            const defaultUsed = planMeta ? 1 : 0;
+            const safeCutsUsed = Number.isFinite(rawCutsUsed) && rawCutsUsed >= 0 ? rawCutsUsed : defaultUsed;
 
-            combined.forEach((item, idx) => {
-                if (!item || !item.date || !item.time) return;
-                const cleanCode = String(item.code || "").trim().toUpperCase();
-                const slotKey = `${String(item.date).trim()}__${String(item.time).trim()}`;
-                const mapKey = cleanCode || slotKey;
-                const serviceStr = String(item.service || "Corte Individual ($10.000)").trim();
-                const planMeta = getPlanInfoByService(serviceStr);
-                const rawCutsUsed = Number(item.cutsUsed);
-                const defaultUsed = planMeta ? 1 : 0;
-                const safeCutsUsed = Number.isFinite(rawCutsUsed) && rawCutsUsed >= 0 ? rawCutsUsed : defaultUsed;
-
-                const normalized = {
-                    id: item.id || (Date.now() + idx),
-                    code: cleanCode || ("AYR-" + Math.random().toString(36).substring(2, 6).toUpperCase()),
-                    name: String(item.name || "Cliente").trim(),
-                    phone: String(item.phone || "Sin teléfono").trim(),
-                    service: serviceStr,
-                    date: String(item.date).trim(),
-                    time: String(item.time).trim(),
-                    cutsUsed: planMeta ? Math.min(safeCutsUsed, planMeta.maxCuts) : 0
-                };
-
-                if (!uniqueMap.has(mapKey)) {
-                    uniqueMap.set(mapKey, normalized);
-                } else {
-                    const existing = uniqueMap.get(mapKey);
-                    if (planMeta) {
-                        const maxKnownUsed = Math.max(Number(existing.cutsUsed) || 0, Number(normalized.cutsUsed) || 0, 1);
-                        existing.cutsUsed = Math.min(maxKnownUsed, planMeta.maxCuts);
-                    }
-                    if ((!existing.name || existing.name === "Cliente") && normalized.name && normalized.name !== "Cliente") {
-                        existing.name = normalized.name;
-                    }
-                    if (!existing.service || existing.service === "Corte Individual ($10.000)") {
-                        existing.service = normalized.service;
-                    }
-                }
-            });
-
-            return Array.from(uniqueMap.values()).sort((a, b) => {
-                const dtA = `${a.date} ${a.time}`;
-                const dtB = `${b.date} ${b.time}`;
-                return dtA.localeCompare(dtB);
-            });
+            return {
+                id: item.id || docId,
+                docId,
+                code: String(item.code || ("AYR-" + Math.random().toString(36).substring(2, 6).toUpperCase())).trim().toUpperCase(),
+                name: String(item.name || "Cliente").trim(),
+                phone: String(item.phone || "Sin teléfono").trim(),
+                service: serviceStr,
+                date,
+                time,
+                cutsUsed: planMeta ? Math.min(safeCutsUsed, planMeta.maxCuts) : 0,
+                createdAt: Number(item.createdAt) || Date.now()
+            };
         }
 
-        // Verifica si una fecha y hora ya están reservadas
+        function sortBookings(list) {
+            return [...list].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+        }
+
         function isSlotTaken(date, time, list = appointments) {
             if (!date || !time) return false;
-            return list.some(item => item.date === date && item.time === time);
+            return list.some(item => String(item.date).trim() === String(date).trim() && String(item.time).trim() === String(time).trim());
         }
 
-        // Consulta directamente la nube para obtener los turnos más recientes antes de confirmar
-        async function fetchLatestCloudBookings() {
+        // Inicializa Firebase Auth + Firestore en tiempo real
+        async function initRealtimeDatabase() {
             try {
-                const controller = new AbortController();
-                const timer = setTimeout(() => controller.abort(), 3500);
-                const response = await fetch(`${CLOUD_SYNC_URL}?t=${Date.now()}`, {
-                    method: 'GET',
-                    signal: controller.signal
-                });
-                clearTimeout(timer);
+                if (typeof __firebase_config === "undefined" || !__firebase_config) {
+                    updateSyncBadge("Modo respaldo sincronizado activo", false);
+                    await fallbackCloudPoll(false);
+                    return;
+                }
 
-                if (response.ok) {
-                    const cloudData = await response.json();
-                    if (Array.isArray(cloudData)) {
-                        return cloudData;
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (typeof __initial_auth_token !== "undefined" && __initial_auth_token) {
+                    const cred = await signInWithCustomToken(auth, __initial_auth_token);
+                    currentUser = cred.user;
+                } else {
+                    const cred = await signInAnonymously(auth);
+                    currentUser = cred.user;
+                }
+
+                if (!currentUser) return;
+
+                const colRef = getBookingsCollection();
+                if (!colRef) return;
+
+                if (unsubscribeRealtime) {
+                    unsubscribeRealtime();
+                }
+
+                // Escucha en vivo cada cambio en la agenda desde cualquier celular
+                unsubscribeRealtime = onSnapshot(
+                    colRef,
+                    (snapshot) => {
+                        const liveList = [];
+                        snapshot.forEach((docSnap) => {
+                            const normalized = normalizeBookingRecord(docSnap.data(), docSnap.id);
+                            if (normalized) liveList.push(normalized);
+                        });
+                        appointments = sortBookings(liveList);
+                        realtimeReady = true;
+                        updateSyncBadge("Agenda en tiempo real conectada (todos los dispositivos sincronizados)", true);
+                        renderTimeSlots();
+                        renderClientAgenda();
+                        if (isOwnerLogged) {
+                            renderOwnerTable();
+                        }
+                    },
+                    (error) => {
+                        console.error("Error en tiempo real Firestore:", error);
+                        realtimeReady = false;
+                        updateSyncBadge("Reconectando agenda en vivo...", false);
+                    }
+                );
+            } catch (err) {
+                console.error("Error inicializando tiempo real:", err);
+                realtimeReady = false;
+                updateSyncBadge("Sincronizando en modo respaldo...", false);
+                await fallbackCloudPoll(false);
+            }
+        }
+
+        // Respaldo de sincronización HTTP si se abre fuera del entorno con config embebida
+        async function fallbackCloudPoll(showFeedback = false) {
+            try {
+                const res = await fetch(`${FALLBACK_CLOUD_URL}?t=${Date.now()}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data)) {
+                        appointments = sortBookings(
+                            data.map(item => normalizeBookingRecord(item)).filter(Boolean)
+                        );
+                        renderTimeSlots();
+                        renderClientAgenda();
+                        if (isOwnerLogged) renderOwnerTable();
+                        if (showFeedback) notify("Agenda actualizada");
                     }
                 }
             } catch (err) {
-                console.warn("No se pudo consultar la nube en vivo:", err);
+                if (showFeedback) notify("No se pudo actualizar en este momento");
             }
-            return null;
         }
 
-        // Selecciona un servicio desde las tarjetas y desplaza al formulario
+        async function saveBookingToCloud(bookingRecord) {
+            if (db && currentUser) {
+                const colRef = getBookingsCollection();
+                const slotDocId = buildSlotDocId(bookingRecord.date, bookingRecord.time);
+                const docRef = doc(colRef, slotDocId);
+                await setDoc(docRef, {
+                    ...bookingRecord,
+                    docId: slotDocId
+                });
+                return;
+            }
+
+            // Respaldo HTTP
+            const nextList = sortBookings([
+                ...appointments.filter(item => !(item.date === bookingRecord.date && item.time === bookingRecord.time)),
+                bookingRecord
+            ]);
+            appointments = nextList;
+            await fetch(`${FALLBACK_CLOUD_URL}?t=${Date.now()}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(appointments)
+            });
+        }
+
+        async function syncFromCloud(showFeedback = false) {
+            if (db && currentUser) {
+                try {
+                    const colRef = getBookingsCollection();
+                    const snap = await getDocs(colRef);
+                    const freshList = [];
+                    snap.forEach((docSnap) => {
+                        const normalized = normalizeBookingRecord(docSnap.data(), docSnap.id);
+                        if (normalized) freshList.push(normalized);
+                    });
+                    appointments = sortBookings(freshList);
+                    renderTimeSlots();
+                    renderClientAgenda();
+                    if (isOwnerLogged) renderOwnerTable();
+                    if (showFeedback) notify("Horarios verificados en tiempo real");
+                    return;
+                } catch (err) {
+                    console.warn("Error leyendo Firestore:", err);
+                }
+            }
+            await fallbackCloudPoll(showFeedback);
+        }
+
         function chooseService(serviceKey) {
-            const select = document.getElementById('service-select');
+            const select = document.getElementById("service-select");
             if (select && SERVICE_DETAILS[serviceKey]) {
                 select.value = serviceKey;
                 updatePriceBox();
             }
-            const reserveSection = document.getElementById('reservar');
+            const reserveSection = document.getElementById("reservar");
             if (reserveSection) {
-                reserveSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                reserveSection.scrollIntoView({ behavior: "smooth", block: "start" });
             }
         }
 
-        // Actualiza precio, seña y caja de transferencia según el servicio elegido
         function updatePriceBox() {
-            const select = document.getElementById('service-select');
-            const totalEl = document.getElementById('price-total');
-            const depositBadge = document.getElementById('deposit-badge');
-            const depositAmount = document.getElementById('deposit-amount');
-            const transferBox = document.getElementById('transfer-box');
+            const select = document.getElementById("service-select");
+            const totalEl = document.getElementById("price-total");
+            const depositBadge = document.getElementById("deposit-badge");
+            const depositAmount = document.getElementById("deposit-amount");
+            const transferBox = document.getElementById("transfer-box");
 
-            const key = (select && select.value) || 'corte';
+            const key = (select && select.value) || "corte";
             const info = SERVICE_DETAILS[key] || SERVICE_DETAILS.corte;
 
             if (totalEl) totalEl.textContent = info.priceText;
 
             if (info.requiresDeposit && info.depositText) {
-                if (depositBadge) depositBadge.classList.remove('hidden');
+                if (depositBadge) depositBadge.classList.remove("hidden");
                 if (depositAmount) depositAmount.textContent = info.depositText;
-                if (transferBox) transferBox.classList.remove('hidden');
+                if (transferBox) transferBox.classList.remove("hidden");
             } else {
-                if (depositBadge) depositBadge.classList.add('hidden');
-                if (transferBox) transferBox.classList.add('hidden');
+                if (depositBadge) depositBadge.classList.add("hidden");
+                if (transferBox) transferBox.classList.add("hidden");
             }
         }
 
-        // Renderiza los horarios de mañana y tarde marcando Disponibles / Ocupados
         function renderTimeSlots() {
-            const dateInput = document.getElementById('booking-date');
-            const timeSelect = document.getElementById('booking-time');
+            const dateInput = document.getElementById("booking-date");
+            const timeSelect = document.getElementById("booking-time");
             if (!timeSelect) return;
 
-            const selectedDate = (dateInput && dateInput.value) || new Date().toISOString().split('T')[0];
+            const selectedDate = (dateInput && dateInput.value) || new Date().toISOString().split("T")[0];
             const previousValue = timeSelect.value;
 
             timeSelect.innerHTML = "";
 
             TIME_SLOTS.forEach(slot => {
                 const taken = isSlotTaken(selectedDate, slot, appointments);
-                const option = document.createElement('option');
+                const option = document.createElement("option");
                 option.value = slot;
                 option.disabled = taken;
                 option.textContent = taken ? `${slot} ❌ (Ocupado)` : `${slot} ✅ (Disponible)`;
@@ -759,14 +884,12 @@
             }
         }
 
-        // Copia el alias para transferencias de seña
         function copyAlias() {
-            const aliasEl = document.getElementById('alias-text');
+            const aliasEl = document.getElementById("alias-text");
             const text = aliasEl ? aliasEl.textContent.trim() : "barberia.ayrton.mp";
             copyTextToClipboard(text, "Alias copiado: " + text);
         }
 
-        // Copia texto usando portapapeles moderno o fallback compatible con iframes
         function copyTextToClipboard(text, successMsg) {
             if (!text) return;
             try {
@@ -786,14 +909,14 @@
 
         function fallbackCopy(text, successMsg) {
             try {
-                const helper = document.createElement('textarea');
+                const helper = document.createElement("textarea");
                 helper.value = text;
-                helper.setAttribute('readonly', '');
-                helper.style.position = 'fixed';
-                helper.style.left = '-9999px';
+                helper.setAttribute("readonly", "");
+                helper.style.position = "fixed";
+                helper.style.left = "-9999px";
                 document.body.appendChild(helper);
                 helper.select();
-                document.execCommand('copy');
+                document.execCommand("copy");
                 document.body.removeChild(helper);
                 notify(successMsg || "Copiado al portapapeles");
             } catch (err) {
@@ -801,66 +924,6 @@
             }
         }
 
-        // Sincroniza turnos desde almacenamiento local y nube
-        async function syncFromCloud(showFeedback = false) {
-            try {
-                const localRaw = localStorage.getItem('ayrton_bookings');
-                const localList = localRaw ? JSON.parse(localRaw) : [];
-                appointments = mergeAppointments(localList, []);
-            } catch (err) {
-                appointments = [];
-            }
-
-            renderTimeSlots();
-            renderClientAgenda();
-            if (isOwnerLogged) {
-                renderOwnerTable();
-            }
-
-            const cloudData = await fetchLatestCloudBookings();
-            if (Array.isArray(cloudData)) {
-                appointments = mergeAppointments(appointments, cloudData);
-                localStorage.setItem('ayrton_bookings', JSON.stringify(appointments));
-                renderTimeSlots();
-                renderClientAgenda();
-                if (isOwnerLogged) {
-                    renderOwnerTable();
-                }
-                if (showFeedback) {
-                    notify("Agenda actualizada en tiempo real");
-                }
-                return;
-            }
-
-            if (showFeedback) {
-                notify("Agenda local actualizada");
-            }
-        }
-
-        // Envía turnos a la nube y guarda respaldo local
-        async function pushToCloud() {
-            try {
-                localStorage.setItem('ayrton_bookings', JSON.stringify(appointments));
-            } catch (err) {
-                console.warn("Error guardando en localStorage:", err);
-            }
-
-            try {
-                const controller = new AbortController();
-                const timer = setTimeout(() => controller.abort(), 3500);
-                await fetch(`${CLOUD_SYNC_URL}?t=${Date.now()}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(appointments),
-                    signal: controller.signal
-                });
-                clearTimeout(timer);
-            } catch (err) {
-                console.warn("No se pudo enviar a la nube, guardado localmente:", err);
-            }
-        }
-
-        // Construye enlace directo de WhatsApp hacia el número de Ayrton
         function buildWhatsAppUrl(messageText) {
             const cleanPhone = String(BARBER_WHATSAPP || "5493425913679").replace(/\D/g, "");
             const encoded = encodeURIComponent(messageText);
@@ -869,13 +932,12 @@
                 : `https://api.whatsapp.com/send?text=${encoded}`;
         }
 
-        // Dispara apertura directa a WhatsApp evitando bloqueos de ventanas emergentes
         function openWhatsAppNow(waUrl) {
             try {
-                const tempLink = document.createElement('a');
+                const tempLink = document.createElement("a");
                 tempLink.href = waUrl;
-                tempLink.target = '_blank';
-                tempLink.rel = 'noopener noreferrer';
+                tempLink.target = "_blank";
+                tempLink.rel = "noopener noreferrer";
                 document.body.appendChild(tempLink);
                 tempLink.click();
                 document.body.removeChild(tempLink);
@@ -888,15 +950,14 @@
             }
         }
 
-        // Procesa el envío del formulario de reserva
         async function handleBookingSubmit(e) {
             e.preventDefault();
-            const btn = document.getElementById('submit-booking-btn');
-            const nameInput = document.getElementById('client-name');
-            const phoneInput = document.getElementById('client-phone');
-            const serviceSelect = document.getElementById('service-select');
-            const dateInput = document.getElementById('booking-date');
-            const timeSelect = document.getElementById('booking-time');
+            const btn = document.getElementById("submit-booking-btn");
+            const nameInput = document.getElementById("client-name");
+            const phoneInput = document.getElementById("client-phone");
+            const serviceSelect = document.getElementById("service-select");
+            const dateInput = document.getElementById("booking-date");
+            const timeSelect = document.getElementById("booking-time");
 
             const name = (nameInput && nameInput.value ? nameInput.value : "").trim();
             const phone = (phoneInput && phoneInput.value ? phoneInput.value : "").trim();
@@ -909,58 +970,57 @@
                 return;
             }
 
-            if (isSlotTaken(date, time, appointments)) {
-                renderTimeSlots();
-                notify("Ese horario ya está ocupado. Elegí otro disponible.");
-                return;
-            }
-
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-lg"></i> <span>Verificando disponibilidad...</span>`;
+                btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-lg"></i> <span>Verificando disponibilidad en vivo...</span>`;
             }
 
-            // Verifica en vivo en la nube si otro cliente acaba de tomar ese día y horario
-            const latestCloud = await fetchLatestCloudBookings();
-            if (Array.isArray(latestCloud)) {
-                appointments = mergeAppointments(appointments, latestCloud);
-                localStorage.setItem('ayrton_bookings', JSON.stringify(appointments));
-                renderTimeSlots();
-                renderClientAgenda();
-                if (isOwnerLogged) {
-                    renderOwnerTable();
-                }
+            // Consulta fresca en tiempo real antes de grabar para evitar doble reserva simultánea
+            await syncFromCloud(false);
 
-                if (isSlotTaken(date, time, appointments)) {
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.innerHTML = `<i class="fa-brands fa-whatsapp text-xl"></i> <span>Confirmar Turno y Enviar a WhatsApp</span>`;
-                    }
-                    notify(`¡Justo se ocupó ${date} a las ${time}! Elegí otro horario disponible.`);
-                    return;
+            if (isSlotTaken(date, time, appointments)) {
+                renderTimeSlots();
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = `<i class="fa-brands fa-whatsapp text-xl"></i> <span>Confirmar Turno y Enviar a WhatsApp</span>`;
                 }
+                notify(`¡Ese turno (${date} a las ${time}) ya fue reservado por otro cliente!`);
+                return;
             }
 
             const serviceInfo = SERVICE_DETAILS[serviceKey] || SERVICE_DETAILS.corte;
             const code = "AYR-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+            const slotDocId = buildSlotDocId(date, time);
 
             const newBooking = {
-                id: Date.now() + Math.floor(Math.random() * 1000),
+                id: slotDocId,
+                docId: slotDocId,
                 code,
                 name,
                 phone,
                 service: serviceInfo.label,
                 date,
                 time,
-                cutsUsed: serviceInfo.planType ? 1 : 0
+                cutsUsed: serviceInfo.planType ? 1 : 0,
+                createdAt: Date.now()
             };
 
-            appointments = mergeAppointments([...appointments, newBooking], []);
-            localStorage.setItem('ayrton_bookings', JSON.stringify(appointments));
-            renderTimeSlots();
-            renderClientAgenda();
-            if (isOwnerLogged) {
-                renderOwnerTable();
+            try {
+                await saveBookingToCloud(newBooking);
+                if (!isSlotTaken(date, time, appointments)) {
+                    appointments = sortBookings([...appointments, newBooking]);
+                }
+                renderTimeSlots();
+                renderClientAgenda();
+                if (isOwnerLogged) renderOwnerTable();
+            } catch (err) {
+                console.error("Error guardando reserva en tiempo real:", err);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = `<i class="fa-brands fa-whatsapp text-xl"></i> <span>Confirmar Turno y Enviar a WhatsApp</span>`;
+                }
+                notify("No se pudo bloquear el turno en el servidor. Intentá nuevamente.");
+                return;
             }
 
             const waText = [
@@ -976,10 +1036,10 @@
             lastReceiptMessage = waText;
             const waUrl = buildWhatsAppUrl(waText);
 
-            const receiptBox = document.getElementById('booking-receipt-box');
-            const receiptCode = document.getElementById('receipt-code');
-            const receiptSummary = document.getElementById('receipt-summary');
-            const receiptWaLink = document.getElementById('receipt-wa-link');
+            const receiptBox = document.getElementById("booking-receipt-box");
+            const receiptCode = document.getElementById("receipt-code");
+            const receiptSummary = document.getElementById("receipt-summary");
+            const receiptWaLink = document.getElementById("receipt-wa-link");
 
             if (receiptCode) receiptCode.textContent = code;
             if (receiptSummary) {
@@ -990,8 +1050,8 @@
             }
 
             if (receiptBox) {
-                receiptBox.classList.remove('hidden');
-                receiptBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                receiptBox.classList.remove("hidden");
+                receiptBox.scrollIntoView({ behavior: "smooth", block: "center" });
             }
 
             if (btn) {
@@ -999,18 +1059,16 @@
                 btn.innerHTML = `<i class="fa-brands fa-whatsapp text-xl"></i> <span>Confirmar Turno y Enviar a WhatsApp</span>`;
             }
 
-            notify(`¡Turno ${code} listo! Enviando a WhatsApp 342 591 3679...`);
+            notify(`¡Turno ${code} bloqueado en tiempo real! Enviando a WhatsApp...`);
             openWhatsAppNow(waUrl);
-            await pushToCloud();
         }
 
-        // Actualiza estadísticas de verificación y tarjetas de control de cortes en el Panel de Dueño
         function renderOwnerVerificationStats() {
-            const totalBookingsEl = document.getElementById('stat-total-bookings');
-            const vipClientsEl = document.getElementById('stat-vip-clients');
-            const quincenalClientsEl = document.getElementById('stat-quincenal-clients');
-            const cutsUsedEl = document.getElementById('stat-cuts-used');
-            const trackerEl = document.getElementById('owner-plans-tracker');
+            const totalBookingsEl = document.getElementById("stat-total-bookings");
+            const vipClientsEl = document.getElementById("stat-vip-clients");
+            const quincenalClientsEl = document.getElementById("stat-quincenal-clients");
+            const cutsUsedEl = document.getElementById("stat-cuts-used");
+            const trackerEl = document.getElementById("owner-plans-tracker");
 
             const vipEntries = appointments.filter(item => {
                 const info = getPlanInfoByService(item.service);
@@ -1055,6 +1113,7 @@
                 const badgeClass = info.planType === "vip"
                     ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
                     : "bg-emerald-500/15 text-emerald-300 border-emerald-500/30";
+                const safeDocId = escapeHtml(item.docId);
 
                 return `
                     <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1065,17 +1124,17 @@
                                 <span class="font-mono text-[11px] text-zinc-400">(${escapeHtml(item.code)})</span>
                             </div>
                             <p class="text-xs text-zinc-400 mt-1">
-                                Cortes usados: <strong class="text-white">${used} / ${info.maxCuts}</strong> • Restantes: <strong class="${remaining === 0 ? 'text-red-400' : 'text-emerald-400'}">${remaining}</strong>
+                                Cortes usados: <strong class="text-white">${used} / ${info.maxCuts}</strong> • Restantes: <strong class="${remaining === 0 ? "text-red-400" : "text-emerald-400"}">${remaining}</strong>
                             </p>
                         </div>
                         <div class="flex items-center gap-1.5 self-end sm:self-center">
-                            <button type="button" onclick="adjustPlanCuts(${item.id}, -1)" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold transition" title="Restar 1 corte">
+                            <button type="button" onclick="adjustPlanCuts('${safeDocId}', -1)" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold transition" title="Restar 1 corte">
                                 -1
                             </button>
-                            <button type="button" onclick="adjustPlanCuts(${item.id}, 1)" class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-xs font-extrabold transition" title="Sumar 1 corte realizado">
+                            <button type="button" onclick="adjustPlanCuts('${safeDocId}', 1)" class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-xs font-extrabold transition" title="Sumar 1 corte realizado">
                                 +1 Corte
                             </button>
-                            <button type="button" onclick="resetPlanCuts(${item.id})" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-red-600/30 text-zinc-300 hover:text-red-300 text-xs font-semibold transition" title="Reiniciar contador a 0">
+                            <button type="button" onclick="resetPlanCuts('${safeDocId}')" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-red-600/30 text-zinc-300 hover:text-red-300 text-xs font-semibold transition" title="Reiniciar contador a 0">
                                 Reset
                             </button>
                         </div>
@@ -1084,9 +1143,8 @@
             }).join("");
         }
 
-        // Suma o resta cortes realizados para un cliente con plan VIP o Quincenal
-        function adjustPlanCuts(bookingId, delta) {
-            const target = appointments.find(item => item.id === bookingId);
+        async function adjustPlanCuts(docId, delta) {
+            const target = appointments.find(item => String(item.docId) === String(docId));
             if (!target) return;
 
             const info = getPlanInfoByService(target.service);
@@ -1108,27 +1166,35 @@
             }
 
             target.cutsUsed = nextVal;
-            localStorage.setItem('ayrton_bookings', JSON.stringify(appointments));
             renderOwnerTable();
             notify(`Cortes de ${target.name}: ${target.cutsUsed} de ${info.maxCuts}`);
-            pushToCloud();
+
+            if (db && currentUser) {
+                const colRef = getBookingsCollection();
+                await updateDoc(doc(colRef, String(target.docId)), { cutsUsed: nextVal });
+            } else {
+                await saveBookingToCloud(target);
+            }
         }
 
-        // Reinicia el contador de cortes de un cliente de plan
-        function resetPlanCuts(bookingId) {
-            const target = appointments.find(item => item.id === bookingId);
+        async function resetPlanCuts(docId) {
+            const target = appointments.find(item => String(item.docId) === String(docId));
             if (!target) return;
             target.cutsUsed = 0;
-            localStorage.setItem('ayrton_bookings', JSON.stringify(appointments));
             renderOwnerTable();
             notify(`Contador reiniciado para ${target.name}`);
-            pushToCloud();
+
+            if (db && currentUser) {
+                const colRef = getBookingsCollection();
+                await updateDoc(doc(colRef, String(target.docId)), { cutsUsed: 0 });
+            } else {
+                await saveBookingToCloud(target);
+            }
         }
 
-        // Renderiza la tabla de reservas y verificaciones en el Panel de Dueño
         function renderOwnerTable() {
             renderOwnerVerificationStats();
-            const tbody = document.getElementById('owner-bookings-table');
+            const tbody = document.getElementById("owner-bookings-table");
             if (!tbody) return;
 
             if (appointments.length === 0) {
@@ -1145,13 +1211,14 @@
             tbody.innerHTML = appointments.map(item => {
                 const planInfo = getPlanInfoByService(item.service);
                 const serviceBadge = planInfo
-                    ? `<span class="ml-1.5 inline-block text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border ${planInfo.planType === 'vip' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'}">${planInfo.badge}</span>`
-                    : '';
+                    ? `<span class="ml-1.5 inline-block text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border ${planInfo.planType === "vip" ? "bg-amber-500/15 text-amber-300 border-amber-500/30" : "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"}">${planInfo.badge}</span>`
+                    : "";
+                const safeDocId = escapeHtml(item.docId);
 
                 const cutsCell = planInfo
                     ? `<div class="flex items-center gap-1.5">
                            <span class="text-xs font-bold text-amber-300">${Number(item.cutsUsed) || 0}/${planInfo.maxCuts}</span>
-                           <button type="button" onclick="adjustPlanCuts(${item.id}, 1)" class="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition">+1</button>
+                           <button type="button" onclick="adjustPlanCuts('${safeDocId}', 1)" class="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition">+1</button>
                        </div>`
                     : `<span class="text-xs text-zinc-500">Turno único</span>`;
 
@@ -1164,7 +1231,7 @@
                         <td class="py-3 px-3 text-xs text-emerald-400 font-semibold">${escapeHtml(item.date)} • ${escapeHtml(item.time)}</td>
                         <td class="py-3 px-3 text-xs text-zinc-300">${escapeHtml(item.phone)}</td>
                         <td class="py-3 px-3 text-right">
-                            <button type="button" onclick="openDeleteModal(${item.id})" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/40 px-3 py-1.5 rounded-lg text-xs font-bold transition">
+                            <button type="button" onclick="openDeleteModal('${safeDocId}')" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/40 px-3 py-1.5 rounded-lg text-xs font-bold transition">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
                         </td>
@@ -1173,23 +1240,21 @@
             }).join("");
         }
 
-        // Restablece la vista del formulario para cargar un nuevo turno
         function resetBookingView() {
-            const receiptBox = document.getElementById('booking-receipt-box');
-            const form = document.getElementById('booking-form');
-            if (receiptBox) receiptBox.classList.add('hidden');
+            const receiptBox = document.getElementById("booking-receipt-box");
+            const form = document.getElementById("booking-form");
+            if (receiptBox) receiptBox.classList.add("hidden");
             if (form) {
                 form.reset();
-                const dateInput = document.getElementById('booking-date');
+                const dateInput = document.getElementById("booking-date");
                 if (dateInput && !dateInput.value) {
-                    dateInput.value = new Date().toISOString().split('T')[0];
+                    dateInput.value = new Date().toISOString().split("T")[0];
                 }
                 updatePriceBox();
                 renderTimeSlots();
             }
         }
 
-        // Copia el mensaje formateado del comprobante
         function copyReceiptMessage() {
             if (!lastReceiptMessage) {
                 notify("No hay comprobante generado todavía");
@@ -1198,10 +1263,9 @@
             copyTextToClipboard(lastReceiptMessage, "Mensaje de reserva copiado");
         }
 
-        // Renderiza la agenda pública para clientes
         function renderClientAgenda() {
-            const listEl = document.getElementById('client-agenda-list');
-            const filterInput = document.getElementById('client-filter');
+            const listEl = document.getElementById("client-agenda-list");
+            const filterInput = document.getElementById("client-filter");
             if (!listEl) return;
 
             const query = (filterInput && filterInput.value ? filterInput.value : "").trim().toLowerCase();
@@ -1240,13 +1304,12 @@
             `).join("");
         }
 
-        // Abre modal de acceso al Panel de Dueño
         function openOwnerModal() {
-            const modal = document.getElementById('owner-modal');
-            const passInput = document.getElementById('owner-password-input');
+            const modal = document.getElementById("owner-modal");
+            const passInput = document.getElementById("owner-password-input");
             if (modal) {
-                modal.classList.remove('hidden');
-                modal.classList.add('flex');
+                modal.classList.remove("hidden");
+                modal.classList.add("flex");
             }
             if (passInput) {
                 passInput.value = "";
@@ -1254,28 +1317,26 @@
             }
         }
 
-        // Cierra modal de acceso al Panel de Dueño
         function closeOwnerModal() {
-            const modal = document.getElementById('owner-modal');
+            const modal = document.getElementById("owner-modal");
             if (modal) {
-                modal.classList.add('hidden');
-                modal.classList.remove('flex');
+                modal.classList.add("hidden");
+                modal.classList.remove("flex");
             }
         }
 
-        // Valida contraseña y habilita el Panel de Dueño
         function verifyOwnerLogin(e) {
             e.preventDefault();
-            const passInput = document.getElementById('owner-password-input');
+            const passInput = document.getElementById("owner-password-input");
             const entered = passInput ? passInput.value : "";
 
             if (entered === OWNER_PASSWORD) {
                 isOwnerLogged = true;
                 closeOwnerModal();
-                const dashboard = document.getElementById('owner-dashboard');
+                const dashboard = document.getElementById("owner-dashboard");
                 if (dashboard) {
-                    dashboard.classList.remove('hidden');
-                    dashboard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    dashboard.classList.remove("hidden");
+                    dashboard.scrollIntoView({ behavior: "smooth", block: "start" });
                 }
                 renderOwnerTable();
                 notify("Bienvenido al Panel de Dueño");
@@ -1284,38 +1345,34 @@
             }
         }
 
-        // Sale del Panel de Dueño
         function exitOwnerPanel() {
             isOwnerLogged = false;
-            const dashboard = document.getElementById('owner-dashboard');
+            const dashboard = document.getElementById("owner-dashboard");
             if (dashboard) {
-                dashboard.classList.add('hidden');
+                dashboard.classList.add("hidden");
             }
             notify("Sesión de dueño cerrada");
         }
 
-        // Abre modal para importar mensaje de WhatsApp
         function openWaImportModal() {
-            const modal = document.getElementById('wa-import-modal');
-            const textarea = document.getElementById('wa-raw-message');
+            const modal = document.getElementById("wa-import-modal");
+            const textarea = document.getElementById("wa-raw-message");
             if (textarea) textarea.value = "";
             if (modal) {
-                modal.classList.remove('hidden');
-                modal.classList.add('flex');
+                modal.classList.remove("hidden");
+                modal.classList.add("flex");
             }
             if (textarea) textarea.focus();
         }
 
-        // Cierra modal para importar mensaje de WhatsApp
         function closeWaImportModal() {
-            const modal = document.getElementById('wa-import-modal');
+            const modal = document.getElementById("wa-import-modal");
             if (modal) {
-                modal.classList.add('hidden');
-                modal.classList.remove('flex');
+                modal.classList.add("hidden");
+                modal.classList.remove("flex");
             }
         }
 
-        // Extrae datos estructurados del mensaje pegado de WhatsApp
         function parseWhatsAppBookingText(rawText) {
             const cleanText = String(rawText || "").replace(/\*/g, "");
             const lines = cleanText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -1333,8 +1390,8 @@
                 normalizedDate = `${yyyy}-${mm}-${dd}`;
             }
             if (!normalizedDate) {
-                const dateInputEl = document.getElementById('booking-date');
-                normalizedDate = (dateInputEl && dateInputEl.value) || new Date().toISOString().split('T')[0];
+                const dateInputEl = document.getElementById("booking-date");
+                normalizedDate = (dateInputEl && dateInputEl.value) || new Date().toISOString().split("T")[0];
             }
 
             let normalizedTime = (timeMatch && timeMatch[1]) ? timeMatch[1].trim() : "";
@@ -1351,22 +1408,24 @@
 
             const parsedService = (serviceMatch && serviceMatch[1]) ? serviceMatch[1].trim() : "Corte Individual ($10.000)";
             const planInfo = getPlanInfoByService(parsedService);
+            const slotDocId = buildSlotDocId(normalizedDate, normalizedTime);
 
             return {
-                id: Date.now() + Math.floor(Math.random() * 1000),
+                id: slotDocId,
+                docId: slotDocId,
                 code: (codeMatch && codeMatch[1]) ? codeMatch[1].trim().toUpperCase() : ("AYR-" + Math.random().toString(36).substring(2, 6).toUpperCase()),
                 name: parsedName,
                 service: parsedService,
                 date: normalizedDate,
                 time: normalizedTime,
                 phone: (phoneMatch && phoneMatch[1]) ? phoneMatch[1].trim() : "Sin teléfono",
-                cutsUsed: planInfo ? 1 : 0
+                cutsUsed: planInfo ? 1 : 0,
+                createdAt: Date.now()
             };
         }
 
-        // Guarda el turno importado desde WhatsApp en la agenda
-        function saveWaImport() {
-            const textarea = document.getElementById('wa-raw-message');
+        async function saveWaImport() {
+            const textarea = document.getElementById("wa-raw-message");
             const raw = textarea ? textarea.value.trim() : "";
             if (!raw) {
                 notify("Pegá primero el mensaje del cliente");
@@ -1375,76 +1434,100 @@
 
             try {
                 const imported = parseWhatsAppBookingText(raw);
-                appointments = mergeAppointments([...appointments, imported], []);
-                localStorage.setItem('ayrton_bookings', JSON.stringify(appointments));
-                renderClientAgenda();
-                renderTimeSlots();
-                if (isOwnerLogged) {
-                    renderOwnerTable();
-                }
+                await saveBookingToCloud(imported);
                 closeWaImportModal();
-                notify(`Turno de ${imported.name} (${imported.code}) guardado en tu agenda`);
-                pushToCloud();
+                notify(`Turno de ${imported.name} (${imported.code}) guardado en tiempo real`);
             } catch (err) {
                 console.error("Error al importar mensaje de WhatsApp:", err);
-                notify("No se pudo leer el mensaje. Revisá el texto pegado.");
+                notify("No se pudo guardar el mensaje. Revisá el texto pegado.");
             }
         }
 
-        // Abre modal para confirmar eliminación de turno
-        function openDeleteModal(id) {
-            pendingDeleteId = id;
-            const modal = document.getElementById('delete-modal');
+        function openDeleteModal(docId) {
+            pendingDeleteId = docId;
+            const modal = document.getElementById("delete-modal");
             if (modal) {
-                modal.classList.remove('hidden');
-                modal.classList.add('flex');
+                modal.classList.remove("hidden");
+                modal.classList.add("flex");
             }
         }
 
-        // Cierra modal de eliminación
         function closeDeleteModal() {
             pendingDeleteId = null;
-            const modal = document.getElementById('delete-modal');
+            const modal = document.getElementById("delete-modal");
             if (modal) {
-                modal.classList.add('hidden');
-                modal.classList.remove('flex');
+                modal.classList.add("hidden");
+                modal.classList.remove("flex");
             }
         }
 
-        // Elimina el turno seleccionado y libera el horario
-        function confirmDeleteBooking() {
-            if (pendingDeleteId === null) return;
-            appointments = appointments.filter(item => item.id !== pendingDeleteId);
-            localStorage.setItem('ayrton_bookings', JSON.stringify(appointments));
+        async function confirmDeleteBooking() {
+            if (!pendingDeleteId) return;
+            const targetDocId = String(pendingDeleteId);
             closeDeleteModal();
-            renderOwnerTable();
-            renderClientAgenda();
-            renderTimeSlots();
-            notify("Turno eliminado y horario liberado");
-            pushToCloud();
+
+            try {
+                if (db && currentUser) {
+                    const colRef = getBookingsCollection();
+                    await deleteDoc(doc(colRef, targetDocId));
+                } else {
+                    appointments = appointments.filter(item => String(item.docId) !== targetDocId);
+                    await fetch(`${FALLBACK_CLOUD_URL}?t=${Date.now()}`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(appointments)
+                    });
+                    renderOwnerTable();
+                    renderClientAgenda();
+                    renderTimeSlots();
+                }
+                notify("Turno eliminado y horario liberado en tiempo real");
+            } catch (err) {
+                console.error("Error eliminando turno:", err);
+                notify("No se pudo eliminar el turno");
+            }
         }
 
+        // Exponer funciones al ámbito global para eventos onclick/onsubmit del HTML
+        window.chooseService = chooseService;
+        window.updatePriceBox = updatePriceBox;
+        window.renderTimeSlots = renderTimeSlots;
+        window.copyAlias = copyAlias;
+        window.handleBookingSubmit = handleBookingSubmit;
+        window.resetBookingView = resetBookingView;
+        window.copyReceiptMessage = copyReceiptMessage;
+        window.renderClientAgenda = renderClientAgenda;
+        window.syncFromCloud = syncFromCloud;
+        window.openOwnerModal = openOwnerModal;
+        window.closeOwnerModal = closeOwnerModal;
+        window.verifyOwnerLogin = verifyOwnerLogin;
+        window.exitOwnerPanel = exitOwnerPanel;
+        window.openWaImportModal = openWaImportModal;
+        window.closeWaImportModal = closeWaImportModal;
+        window.saveWaImport = saveWaImport;
+        window.openDeleteModal = openDeleteModal;
+        window.closeDeleteModal = closeDeleteModal;
+        window.adjustPlanCuts = adjustPlanCuts;
+        window.resetPlanCuts = resetPlanCuts;
+
         // Inicialización al cargar la página
-        window.addEventListener('DOMContentLoaded', function () {
-            const dateInput = document.getElementById('booking-date');
-            const todayStr = new Date().toISOString().split('T')[0];
+        window.addEventListener("DOMContentLoaded", function () {
+            const dateInput = document.getElementById("booking-date");
+            const todayStr = new Date().toISOString().split("T")[0];
             if (dateInput && !dateInput.value) {
                 dateInput.value = todayStr;
             }
 
-            const confirmDeleteBtn = document.getElementById('confirm-delete-action');
+            const confirmDeleteBtn = document.getElementById("confirm-delete-action");
             if (confirmDeleteBtn) {
-                confirmDeleteBtn.addEventListener('click', confirmDeleteBooking);
+                confirmDeleteBtn.addEventListener("click", confirmDeleteBooking);
             }
 
             updatePriceBox();
-            syncFromCloud(false);
-
-            // Actualización periódica para reflejar reservas de otros dispositivos
-            setInterval(() => {
-                syncFromCloud(false);
-            }, 8000);
+            renderTimeSlots();
+            renderClientAgenda();
+            initRealtimeDatabase();
         });
     </script>
 </body>
-            </html>
+    </html>
