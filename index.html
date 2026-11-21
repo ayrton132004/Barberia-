@@ -558,10 +558,11 @@
         // Configuración principal de contacto y acceso
         const BARBER_WHATSAPP = "5493425913679";
         const OWNER_PASSWORD = "ayrton2026";
-        // Canal público en tiempo real con CORS abierto compatible con GitHub Pages
-        const NTFY_TOPIC = "barberia_ayrton_santa_fe_turnos_live_2026_v4";
-        const NTFY_BASE_URL = `https://ntfy.sh/${NTFY_TOPIC}`;
-        const LOCAL_CACHE_KEY = "barberia_ayrton_cache_v4";
+        // Almacén JSON persistente en la nube (no expira a las pocas horas como ntfy.sh)
+        const JSONBLOB_ID = "1346928571940282368";
+        const PERSISTENT_CLOUD_URL = `https://jsonblob.com/api/jsonBlob/${JSONBLOB_ID}`;
+        const LOCAL_CACHE_KEY = "barberia_ayrton_persist_v5";
+        const CLOUD_ID_STORAGE_KEY = "barberia_ayrton_blob_id_v5";
 
         // Franjas horarias de mañana (10:00 - 12:00) y tarde (15:00 - 20:00)
         const TIME_SLOTS = [
@@ -587,7 +588,7 @@
         let toastTimeout = null;
         let isSyncingNow = false;
         let livePollTimer = null;
-        let liveEventSource = null;
+        let activeBlobUrl = PERSISTENT_CLOUD_URL;
 
         // Estado de conexión Firestore en tiempo real (cuando corre dentro del entorno)
         let db = null;
@@ -740,8 +741,9 @@
                             if (normalized) liveList.push(normalized);
                         });
                         appointments = sortBookings(liveList);
+                        saveLocalFallback(appointments);
                         realtimeReady = true;
-                        updateSyncBadge("Agenda en tiempo real conectada (todos los dispositivos sincronizados)", true);
+                        updateSyncBadge("Agenda permanente en tiempo real conectada (todos los dispositivos sincronizados)", true);
                         renderTimeSlots();
                         renderClientAgenda();
                         if (isOwnerLogged) {
@@ -763,7 +765,7 @@
             }
         }
 
-        // Bucle en tiempo real y escucha SSE para GitHub Pages y navegadores móviles
+        // Bucle de sincronización continua en tiempo real para GitHub Pages y celulares
         function startLivePollingLoop() {
             if (livePollTimer) clearInterval(livePollTimer);
             livePollTimer = setInterval(() => {
@@ -771,23 +773,6 @@
                     fallbackCloudPoll(false);
                 }
             }, 3000);
-
-            try {
-                if (liveEventSource) liveEventSource.close();
-                liveEventSource = new EventSource(`${NTFY_BASE_URL}/sse`);
-                liveEventSource.onmessage = (event) => {
-                    try {
-                        const packet = JSON.parse(event.data);
-                        if (packet && packet.message) {
-                            fallbackCloudPoll(false);
-                        }
-                    } catch (e) {
-                        // Ignorar latidos de conexión
-                    }
-                };
-            } catch (e) {
-                // Si el navegador bloquea SSE, el bucle cada 3s mantiene todo sincronizado
-            }
         }
 
         function loadLocalFallback() {
@@ -811,86 +796,101 @@
             }
         }
 
-        // Reconstruye el estado exacto de la agenda a partir de los eventos sincronizados en la nube
-        function applyRemoteEventLog(events) {
-            const bySlot = new Map();
-            const sortedEvents = [...events].sort((a, b) => (Number(a.ts) || 0) - (Number(b.ts) || 0));
-
-            for (const ev of sortedEvents) {
-                if (!ev || typeof ev !== "object") continue;
-                if (ev.type === "UPSERT" && ev.booking) {
-                    const norm = normalizeBookingRecord(ev.booking);
-                    if (norm) {
-                        bySlot.set(norm.docId, norm);
-                    }
-                } else if (ev.type === "CUTS" && ev.docId) {
-                    const existing = bySlot.get(String(ev.docId));
-                    if (existing) {
-                        existing.cutsUsed = Number(ev.cutsUsed) || 0;
-                        bySlot.set(existing.docId, existing);
-                    }
-                } else if (ev.type === "DELETE" && ev.docId) {
-                    bySlot.delete(String(ev.docId));
-                }
+        // Asegura un endpoint JSON permanente (si el ID inicial devuelve 404, crea y reutiliza uno nuevo)
+        async function ensurePersistentEndpoint() {
+            const savedUrl = localStorage.getItem(CLOUD_ID_STORAGE_KEY);
+            if (savedUrl && savedUrl.startsWith("https://jsonblob.com/api/jsonBlob/")) {
+                activeBlobUrl = savedUrl;
             }
-            return sortBookings(Array.from(bySlot.values()));
+
+            const probe = await fetch(`${activeBlobUrl}?_t=${Date.now()}`, {
+                method: "GET",
+                headers: { "Accept": "application/json" },
+                cache: "no-store"
+            });
+
+            if (probe.ok) {
+                return probe;
+            }
+
+            if (probe.status === 404) {
+                const seedBookings = loadLocalFallback();
+                const createRes = await fetch("https://jsonblob.com/api/jsonBlob", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    body: JSON.stringify({
+                        bookings: seedBookings,
+                        updatedAt: Date.now()
+                    })
+                });
+                if (!createRes.ok) throw new Error(`HTTP_${createRes.status}`);
+                const locationHeader = createRes.headers.get("Location") || createRes.headers.get("location");
+                if (locationHeader) {
+                    const normalizedUrl = locationHeader.startsWith("http")
+                        ? locationHeader
+                        : `https://jsonblob.com${locationHeader}`;
+                    activeBlobUrl = normalizedUrl;
+                    localStorage.setItem(CLOUD_ID_STORAGE_KEY, normalizedUrl);
+                }
+                return null;
+            }
+
+            throw new Error(`HTTP_${probe.status}`);
         }
 
-        async function readRemoteKeyVal() {
-            const url = `${NTFY_BASE_URL}/json?poll=1&since=all&_t=${Date.now()}`;
-            const res = await fetch(url, { method: "GET", cache: "no-store" });
-            if (!res.ok) throw new Error(`HTTP_${res.status}`);
-            const rawText = await res.text();
-            if (!rawText || !rawText.trim()) return [];
-
-            const lines = rawText.trim().split("\n");
-            const parsedEvents = [];
-            for (const line of lines) {
-                try {
-                    const wrapper = JSON.parse(line);
-                    if (wrapper && wrapper.event === "message" && wrapper.message) {
-                        const payload = JSON.parse(wrapper.message);
-                        if (payload && payload.type) {
-                            parsedEvents.push(payload);
-                        }
-                    }
-                } catch (e) {
-                    // Ignorar líneas no JSON
-                }
+        async function readPersistentCloud() {
+            const response = await ensurePersistentEndpoint();
+            if (!response) {
+                return loadLocalFallback();
             }
-            return applyRemoteEventLog(parsedEvents);
+            const data = await response.json();
+            const rawBookings = Array.isArray(data && data.bookings)
+                ? data.bookings
+                : (Array.isArray(data) ? data : []);
+
+            return sortBookings(rawBookings.map(item => normalizeBookingRecord(item)).filter(Boolean));
         }
 
-        async function publishCloudEvent(eventObj) {
-            const res = await fetch(NTFY_BASE_URL, {
-                method: "POST",
+        async function writePersistentCloud(nextBookingsList) {
+            await ensurePersistentEndpoint();
+            const cleanSorted = sortBookings(nextBookingsList);
+            const res = await fetch(activeBlobUrl, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
                 body: JSON.stringify({
-                    ...eventObj,
-                    ts: Date.now()
+                    bookings: cleanSorted,
+                    updatedAt: Date.now()
                 })
             });
             if (!res.ok) throw new Error(`HTTP_${res.status}`);
+            return cleanSorted;
         }
 
-        // Lectura directa sin caché desde la nube global
+        // Lectura permanente sin expiración de 12 horas
         async function fallbackCloudPoll(showFeedback = false) {
             if (isSyncingNow) return;
             isSyncingNow = true;
             try {
-                const remoteList = await readRemoteKeyVal();
+                const remoteList = await readPersistentCloud();
                 const prevSig = JSON.stringify(appointments.map(a => `${a.docId}:${a.cutsUsed}`));
                 const nextSig = JSON.stringify(remoteList.map(a => `${a.docId}:${a.cutsUsed}`));
 
                 appointments = remoteList;
                 saveLocalFallback(remoteList);
-                updateSyncBadge("Agenda online en tiempo real conectada (todos los celulares sincronizados)", true);
+                updateSyncBadge("Agenda permanente conectada (los turnos no se borran solos)", true);
 
                 if (prevSig !== nextSig || showFeedback) {
                     renderTimeSlots();
                     renderClientAgenda();
                     if (isOwnerLogged) renderOwnerTable();
                 }
-                if (showFeedback) notify("Horarios actualizados en vivo");
+                if (showFeedback) notify("Horarios verificados en la nube permanente");
             } catch (err) {
                 const cached = loadLocalFallback();
                 if (appointments.length === 0 && cached.length > 0) {
@@ -899,8 +899,8 @@
                     renderClientAgenda();
                     if (isOwnerLogged) renderOwnerTable();
                 }
-                updateSyncBadge("Sincronizando agenda en segundo plano...", false);
-                if (showFeedback) notify("No se pudo actualizar desde la nube en este instante");
+                updateSyncBadge("Agenda guardada localmente • Reintentando nube...", false);
+                if (showFeedback) notify("Sin respuesta de la nube en este segundo; tus turnos locales siguen protegidos");
             } finally {
                 isSyncingNow = false;
             }
@@ -918,10 +918,10 @@
                 return;
             }
 
-            // Descarga la última versión antes de confirmar para no pisar reservas simultáneas
-            let latestRemote = [...appointments];
+            // Descarga la lista permanente antes de guardar para fusionar sin perder ningún turno futuro
+            let latestRemote = [];
             try {
-                latestRemote = await readRemoteKeyVal();
+                latestRemote = await readPersistentCloud();
             } catch (err) {
                 latestRemote = loadLocalFallback().length > 0 ? loadLocalFallback() : [...appointments];
             }
@@ -935,18 +935,14 @@
                 throw new Error("SLOT_ALREADY_TAKEN");
             }
 
-            await publishCloudEvent({
-                type: "UPSERT",
-                booking: bookingRecord
-            });
-
             const mergedList = sortBookings([
                 ...latestRemote.filter(item => !(item.date === bookingRecord.date && item.time === bookingRecord.time)),
                 bookingRecord
             ]);
 
-            appointments = mergedList;
-            saveLocalFallback(mergedList);
+            const savedList = await writePersistentCloud(mergedList);
+            appointments = savedList;
+            saveLocalFallback(savedList);
         }
 
         async function syncFromCloud(showFeedback = false) {
@@ -1330,11 +1326,15 @@
                 await updateDoc(doc(colRef, String(target.docId)), { cutsUsed: nextVal });
             } else {
                 saveLocalFallback(appointments);
-                await publishCloudEvent({
-                    type: "CUTS",
-                    docId: String(target.docId),
-                    cutsUsed: nextVal
-                });
+                try {
+                    const latest = await readPersistentCloud();
+                    const updated = latest.map(item =>
+                        String(item.docId) === String(target.docId) ? { ...item, cutsUsed: nextVal } : item
+                    );
+                    await writePersistentCloud(updated);
+                } catch (err) {
+                    console.warn("Error sincronizando cortes en la nube:", err);
+                }
             }
         }
 
@@ -1350,11 +1350,15 @@
                 await updateDoc(doc(colRef, String(target.docId)), { cutsUsed: 0 });
             } else {
                 saveLocalFallback(appointments);
-                await publishCloudEvent({
-                    type: "CUTS",
-                    docId: String(target.docId),
-                    cutsUsed: 0
-                });
+                try {
+                    const latest = await readPersistentCloud();
+                    const updated = latest.map(item =>
+                        String(item.docId) === String(target.docId) ? { ...item, cutsUsed: 0 } : item
+                    );
+                    await writePersistentCloud(updated);
+                } catch (err) {
+                    console.warn("Error reiniciando cortes en la nube:", err);
+                }
             }
         }
 
@@ -1637,13 +1641,11 @@
                     const colRef = getBookingsCollection();
                     await deleteDoc(doc(colRef, targetDocId));
                 } else {
-                    await publishCloudEvent({
-                        type: "DELETE",
-                        docId: targetDocId
-                    });
-                    const nextList = appointments.filter(item => String(item.docId) !== targetDocId);
-                    appointments = nextList;
-                    saveLocalFallback(nextList);
+                    const latest = await readPersistentCloud();
+                    const nextList = latest.filter(item => String(item.docId) !== targetDocId);
+                    const savedList = await writePersistentCloud(nextList);
+                    appointments = savedList;
+                    saveLocalFallback(savedList);
                     renderOwnerTable();
                     renderClientAgenda();
                     renderTimeSlots();
